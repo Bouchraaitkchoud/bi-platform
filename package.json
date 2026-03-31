@@ -1,0 +1,40 @@
+{
+  "name": "bi-platform",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm run dev:all",
+    "dev:api": "cd apps/api && poetry run uvicorn app.main:app --reload --port 8000",
+    "dev:web": "cd apps/web && pnpm dev",
+    "dev:all": "concurrently \"pnpm run dev:api\" \"pnpm run dev:web\"",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "docker:build": "docker-compose build",
+    "db:migrate": "cd apps/api && poetry run alembic upgrade head",
+    "db:makemigrations": "cd apps/api && poetry run alembic revision --autogenerate -m",
+    "db:downgrade": "cd apps/api && poetry run alembic downgrade -1",
+    "test": "concurrently \"cd apps/api && poetry run pytest\" \"cd apps/web && pnpm test\"",
+    "test:api": "cd apps/api && poetry run pytest",
+    "test:web": "cd apps/web && pnpm test",
+    "lint": "concurrently \"cd apps/api && poetry run ruff check .\" \"cd apps/web && pnpm lint\"",
+    "lint:api": "cd apps/api && poetry run ruff check .",
+    "lint:web": "cd apps/web && pnpm lint",
+    "format": "concurrently \"cd apps/api && poetry run black .\" \"cd apps/web && pnpm format\"",
+    "format:api": "cd apps/api && poetry run black .",
+    "format:web": "cd apps/web && pnpm format"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "crypto": "",
+      "path-browserify": ""
+    }
+  }
+}
