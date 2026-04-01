@@ -8,7 +8,7 @@ import uuid
 from app.core.database import get_db
 from app.core.security import verify_token
 from app.core.dependencies import get_current_user
-from app.schemas.share import ShareCreate, ShareResponse, ShareUpdate, PermissionsModel, SharedUserResponse
+from app.schemas.share import ShareCreate, ShareResponse, ShareUpdate, PermissionsModel, SharedUserResponse, SharedDashboardResponse
 from app.models.share import Share
 from app.models.dashboard import Dashboard
 from app.models.user import User
@@ -67,11 +67,21 @@ async def create_share(
         owner_result = await db.execute(owner_stmt)
         owner = owner_result.scalar_one_or_none()
         
+        # If shared_with_user_id is provided, use it. Otherwise, try to look up from email
+        shared_with_user_id = share_data.shared_with_user_id
+        if not shared_with_user_id and share_data.shared_with_email:
+            # Look up user by email
+            user_stmt = select(User).where(User.email == share_data.shared_with_email)
+            user_result = await db.execute(user_stmt)
+            shared_user = user_result.scalar_one_or_none()
+            if shared_user:
+                shared_with_user_id = shared_user.id
+        
         db_share = Share(
             id=uuid.uuid4(),
             dashboard_id=share_data.dashboard_id,
             owner_id=uuid.UUID(current_user["user_id"]),
-            shared_with_user_id=share_data.shared_with_user_id,
+            shared_with_user_id=shared_with_user_id,
             shared_with_email=share_data.shared_with_email,
             can_view=share_data.permissions.can_view,
             can_comment=share_data.permissions.can_comment,
@@ -84,12 +94,7 @@ async def create_share(
         await db.refresh(db_share)
         
         # Send email notification
-        recipient_email = share_data.shared_with_email or (
-            (await db.execute(select(User).where(User.id == share_data.shared_with_user_id))).scalar_one_or_none().email
-            if share_data.shared_with_user_id
-            else None
-        )
-        
+        recipient_email = share_data.shared_with_email
         if recipient_email and owner:
             dashboard_url = f"http://localhost:3000/dashboards/{share_data.dashboard_id}"
             await NotificationService.send_dashboard_shared_notification(
@@ -113,7 +118,7 @@ async def create_share(
         )
 
 
-@router.get("", response_model=list[SharedUserResponse])
+@router.get("", response_model=list)
 async def list_shares(
     dashboard_id: str = None,
     shared_with_me: bool = False,
@@ -127,13 +132,32 @@ async def list_shares(
     try:
         current_user_id = uuid.UUID(current_user["user_id"])
         
+        # Get current user's email for fallback matching
+        user_stmt = select(User).where(User.id == current_user_id)
+        user_result = await db.execute(user_stmt)
+        current_user_obj = user_result.scalar_one_or_none()
+        current_user_email = current_user_obj.email if current_user_obj else None
+        
         if shared_with_me:
-            # Get dashboards shared with me (by email or user_id)
-            stmt = select(Share).where(
+            # Get dashboards shared with me with full dashboard info
+            stmt = select(Share, Dashboard, User).join(
+                Dashboard, Share.dashboard_id == Dashboard.id
+            ).join(
+                User, Dashboard.user_id == User.id
+            ).where(
                 or_(
                     Share.shared_with_user_id == current_user_id,
+                    Share.shared_with_email == current_user_email,
                 )
-            )
+            ).offset(skip).limit(limit)
+            
+            result = await db.execute(stmt)
+            rows = result.all()
+            
+            return [
+                SharedDashboardResponse.from_share_and_dashboard(share, dashboard, owner)
+                for share, dashboard, owner in rows
+            ]
         elif dashboard_id:
             # Get shares for a specific dashboard (only if owner)
             try:
@@ -148,17 +172,20 @@ async def list_shares(
                 (Share.dashboard_id == dashboard_uuid) &
                 (Share.owner_id == current_user_id)
             )
+            result = await db.execute(stmt)
+            shares = result.scalars().all()
+            
+            return [SharedUserResponse.from_share(share) for share in shares]
         else:
             # Get all shares owned by current user
             stmt = select(Share).where(
                 Share.owner_id == current_user_id
-            )
-        
-        stmt = stmt.offset(skip).limit(limit)
-        result = await db.execute(stmt)
-        shares = result.scalars().all()
-        
-        return [SharedUserResponse.from_share(share) for share in shares]
+            ).offset(skip).limit(limit)
+            
+            result = await db.execute(stmt)
+            shares = result.scalars().all()
+            
+            return [SharedUserResponse.from_share(share) for share in shares]
     
     except HTTPException:
         raise

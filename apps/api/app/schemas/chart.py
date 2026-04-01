@@ -1,6 +1,6 @@
 # apps/api/app/schemas/chart.py
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 from uuid import UUID
 
@@ -20,6 +20,11 @@ class ChartUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     config: Optional[Dict[str, Any]] = None
+
+
+class ChartDataRequest(BaseModel):
+    dimensions: Optional[List[str]] = None
+    measures: Optional[List[str]] = None
 
 
 class ChartResponse(ChartBase):

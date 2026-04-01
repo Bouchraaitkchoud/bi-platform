@@ -6,14 +6,37 @@ import enum
 
 
 class ChartType(str, enum.Enum):
+    # Basic Charts (existing)
     LINE = "line"
     BAR = "bar"
-    PIE = "pie"
-    SCATTER = "scatter"
     AREA = "area"
+    SCATTER = "scatter"
+    
+    # Distribution & Statistical
+    PIE = "pie"
+    DONUT = "donut"
     HISTOGRAM = "histogram"
     BOX = "box"
+    
+    # Metrics & KPIs
+    KPI_CARD = "kpi_card"  # Single metric display
+    GAUGE = "gauge"  # Speedometer style gauge
+    
+    # Mixed & Combined
+    COMBO = "combo"  # Line + Bar combined
+    
+    # Hierarchical & Flow
+    TREEMAP = "treemap"  # Hierarchical rectangles
+    WATERFALL = "waterfall"  # Sequential changes
+    FUNNEL = "funnel"  # Funnel/conversion flow
+    
+    # Advanced
+    BUBBLE = "bubble"  # Scatter with size dimension
+    HEATMAP = "heatmap"  # Matrix with color intensity
+    
+    # Data Display
     TABLE = "table"
+    MATRIX = "matrix"  # Pivot table with drill-down
 
 
 class Chart(BaseModel):

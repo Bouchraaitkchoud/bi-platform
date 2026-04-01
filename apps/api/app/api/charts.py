@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_
 import uuid
 from typing import Optional, List
 from pathlib import Path
@@ -10,9 +10,12 @@ from pathlib import Path
 from app.core.database import get_db
 from app.core.security import verify_token
 from app.core.dependencies import get_current_user
-from app.schemas.chart import ChartCreate, ChartResponse, ChartUpdate
+from app.schemas.chart import ChartCreate, ChartResponse, ChartUpdate, ChartDataRequest
 from app.models.chart import Chart
 from app.models.dataset import Dataset
+from app.models.dashboard import Dashboard
+from app.models.share import Share
+from app.models.user import User
 from app.services.chart_service import ChartService
 
 router = APIRouter(prefix="/charts", tags=["charts"])
@@ -188,18 +191,16 @@ async def delete_chart(
 @router.post("/{chart_id}/generate-data")
 async def generate_chart_data(
     chart_id: uuid.UUID,
-    dimensions: Optional[List[str]] = None,
-    measures: Optional[List[str]] = None,
+    request: ChartDataRequest,
     current_user: dict = Depends(get_current_user_from_token),
     db: AsyncSession = Depends(get_db)
 ):
     """Generate chart data based on dataset and chart configuration"""
     
+    current_user_id = uuid.UUID(current_user["user_id"])
+    
     # Get chart
-    stmt = select(Chart).where(
-        (Chart.id == chart_id) &
-        (Chart.user_id == uuid.UUID(current_user["user_id"]))
-    )
+    stmt = select(Chart).where(Chart.id == chart_id)
     result = await db.execute(stmt)
     chart = result.scalar_one_or_none()
     
@@ -209,11 +210,8 @@ async def generate_chart_data(
             detail="Chart not found"
         )
     
-    # Get dataset
-    stmt = select(Dataset).where(
-        (Dataset.id == chart.dataset_id) &
-        (Dataset.user_id == uuid.UUID(current_user["user_id"]))
-    )
+    # Get dataset for this chart
+    stmt = select(Dataset).where(Dataset.id == chart.dataset_id)
     result = await db.execute(stmt)
     dataset = result.scalar_one_or_none()
     
@@ -231,19 +229,26 @@ async def generate_chart_data(
         )
     
     try:
-        # Use config values if not provided in request
-        dims = dimensions if dimensions else chart.config.get("dimensions", [])
-        meas = measures if measures else chart.config.get("measures", [])
+        # Use request values if provided, otherwise use config values
+        dims = request.dimensions if request.dimensions else chart.config.get("dimensions", [])
+        meas = request.measures if request.measures else chart.config.get("measures", [])
         
-        if not dims or not meas:
-            raise ValueError("Both dimensions and measures are required for chart generation")
+        # Validate based on chart type
+        # Some chart types only need measures (kpi_card, gauge)
+        measures_only_charts = ['kpi_card', 'gauge']
+        
+        if not meas:
+            raise ValueError("Measures are required for chart generation")
+        
+        if chart.chart_type not in measures_only_charts and not dims:
+            raise ValueError("Dimensions are required for this chart type")
         
         # Generate chart data
         chart_data = await ChartService.generate_chart_data(
             file_path=dataset.original_file,
             chart_type=chart.chart_type,
-            dimensions=dimensions or chart.config.get("dimensions", []),
-            measures=measures or chart.config.get("measures", []),
+            dimensions=request.dimensions or chart.config.get("dimensions", []),
+            measures=request.measures or chart.config.get("measures", []),
             config=chart.config
         )
         

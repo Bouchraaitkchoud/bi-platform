@@ -63,3 +63,31 @@ class SharedUserResponse(BaseModel):
             ),
             shared_at=share_obj.created_at.isoformat() if share_obj.created_at else ""
         )
+
+
+class SharedDashboardResponse(BaseModel):
+    """Response for dashboards shared with current user"""
+    id: str  # dashboard id
+    name: str
+    description: Optional[str]
+    owner_email: str
+    permissions: PermissionsModel
+    shared_at: str
+    chart_count: int
+    
+    @classmethod
+    def from_share_and_dashboard(cls, share_obj, dashboard_obj, owner_obj):
+        """Build response from Share, Dashboard, and User objects"""
+        return cls(
+            id=str(dashboard_obj.id),
+            name=dashboard_obj.name,
+            description=dashboard_obj.description,
+            owner_email=owner_obj.email if owner_obj else "",
+            permissions=PermissionsModel(
+                can_view=share_obj.can_view,
+                can_comment=share_obj.can_comment,
+                can_edit=share_obj.can_edit
+            ),
+            shared_at=share_obj.created_at.isoformat() if share_obj.created_at else "",
+            chart_count=len(dashboard_obj.chart_ids) if dashboard_obj.chart_ids else 0
+        )

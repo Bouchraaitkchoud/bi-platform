@@ -10,6 +10,7 @@ from app.core.security import verify_token
 from app.core.dependencies import get_current_user
 from app.schemas.dashboard import DashboardCreate, DashboardResponse, DashboardUpdate
 from app.models.dashboard import Dashboard
+from app.models.share import Share
 
 router = APIRouter(prefix="/dashboards", tags=["dashboards"])
 security = HTTPBearer()
@@ -85,20 +86,35 @@ async def get_dashboard(
     current_user: dict = Depends(get_current_user_from_token),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get dashboard by ID"""
+    """Get dashboard by ID - allows access if user owns it or it's shared with them"""
     
+    current_user_id = uuid.UUID(current_user["user_id"])
+    
+    # Check if user owns the dashboard
     stmt = select(Dashboard).where(
         (Dashboard.id == dashboard_id) &
-        (Dashboard.user_id == uuid.UUID(current_user["user_id"]))
+        (Dashboard.user_id == current_user_id)
     )
     
     result = await db.execute(stmt)
     dashboard = result.scalar_one_or_none()
     
+    # If user doesn't own it, check if it's shared with them
+    if not dashboard:
+        share_stmt = select(Dashboard).join(
+            Share,
+            (Share.dashboard_id == Dashboard.id) &
+            (Share.shared_with_user_id == current_user_id) &
+            (Share.can_view == True)
+        ).where(Dashboard.id == dashboard_id)
+        
+        share_result = await db.execute(share_stmt)
+        dashboard = share_result.scalar_one_or_none()
+    
     if not dashboard:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Dashboard not found"
+            detail="Dashboard not found or access denied"
         )
     
     return dashboard
