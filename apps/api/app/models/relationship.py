@@ -1,6 +1,7 @@
 # apps/api/app/models/relationship.py
 from sqlalchemy import Column, String, ForeignKey, Boolean, Enum, JSON, Text
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 from app.models.base import BaseModel
 import enum
 
@@ -54,6 +55,9 @@ class Measure(BaseModel):
     formula_display = Column(Text, nullable=True)  # Formatted for display
     data_type = Column(Enum(DataType), default=DataType.NUMBER)
     
+    # Relationships
+    dataset = relationship("Dataset", back_populates="measures")
+    
     def __repr__(self):
         return f"<Measure {self.name}>"
 
@@ -67,6 +71,9 @@ class CalculatedColumn(BaseModel):
     description = Column(Text, nullable=True)
     formula = Column(Text, nullable=False)  # DAX-like formula
     data_type = Column(Enum(DataType), default=DataType.TEXT)
+    
+    # Relationships
+    dataset = relationship("Dataset", back_populates="calculated_columns")
     
     def __repr__(self):
         return f"<CalculatedColumn {self.column_name}>"
@@ -87,6 +94,9 @@ class Hierarchy(BaseModel):
     description = Column(Text, nullable=True)
     hierarchy_type = Column(Enum(HierarchyType), default=HierarchyType.CUSTOM)
     columns = Column(JSON, default=list)  # Ordered list of column names
+    
+    # Relationships
+    dataset = relationship("Dataset", back_populates="hierarchies")
     
     def __repr__(self):
         return f"<Hierarchy {self.name}>"

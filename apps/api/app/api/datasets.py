@@ -1,5 +1,5 @@
 # apps/api/app/api/datasets.py
-from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
+from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Body
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -23,7 +23,7 @@ router = APIRouter(prefix="/datasets", tags=["datasets"])
 security = HTTPBearer()
 
 # Create storage directory if it doesn't exist
-STORAGE_DIR = Path("storage/datasets")
+STORAGE_DIR = Path("storage/datasets").resolve()  # Use absolute path
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 # File upload configuration
@@ -112,15 +112,21 @@ async def upload_file(
             detail="File is empty"
         )
     
-    # Determine file type
-    file_type = file_extension.lstrip('.')
-    if file_type == "xls":
-        file_type = "xlsx"  # Treat .xls as .xlsx
+    # Determine file type (preserve original .xls vs .xlsx distinction, convert to uppercase)
+    file_type_lower = file_extension.lstrip('.')
+    file_type = file_type_lower.upper()  # Convert to uppercase to match database enum
+    
+    # Validate that we support this format
+    if file_type not in ("CSV", "XLSX", "XLS", "JSON"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported file format. Supported formats: CSV, Excel (.xls, .xlsx), JSON"
+        )
     
     # Generate unique filename
     dataset_id = uuid.uuid4()
     safe_filename = f"{dataset_id}{file_extension}"
-    file_path = STORAGE_DIR / safe_filename
+    file_path = (STORAGE_DIR / safe_filename).resolve()  # Ensure absolute path
     
     try:
         # Save file to disk
@@ -134,13 +140,13 @@ async def upload_file(
         if not name:
             name = Path(file.filename).stem  # Use filename without extension
         
-        # Create dataset record - store the actual file path
+        # Create dataset record - store the absolute file path
         db_dataset = Dataset(
             id=dataset_id,
             user_id=uuid.UUID(current_user["user_id"]),
             name=name,
             description=description,
-            original_file=str(file_path),  # Store full path to the saved file
+            original_file=str(file_path),  # Store absolute path
             file_type=file_type,
             row_count=metadata.get("row_count", 0),
             column_count=metadata.get("column_count", 0),
@@ -207,26 +213,59 @@ async def get_dataset_preview_endpoint(
             detail="Dataset not found"
         )
     
-    # Construct file path - file is saved as {dataset_id}{.extension}
-    file_extension = f".{dataset.file_type.value}"
-    safe_filename = f"{dataset_id}{file_extension}"
-    file_path = STORAGE_DIR / safe_filename
+    # Use the stored file path from the dataset record
+    # Try multiple path variations to find the file
+    file_path = None
+    original_file = dataset.original_file
     
-    print(f"[DEBUG] Looking for file at: {file_path}")
-    print(f"[DEBUG] File exists: {file_path.exists()}")
-    print(f"[DEBUG] STORAGE_DIR: {STORAGE_DIR}")
-    print(f"[DEBUG] Files in storage: {list(STORAGE_DIR.iterdir()) if STORAGE_DIR.exists() else 'DIR NOT FOUND'}")
+    # 1. Try as stored (absolute path)
+    candidate = Path(original_file)
+    if candidate.exists():
+        file_path = candidate
     
-    if not file_path.exists():
+    # 2. If stored as relative path, try it as-is
+    if not file_path and not candidate.is_absolute():
+        if candidate.exists():
+            file_path = candidate.resolve()
+    
+    # 3. Try just filename in STORAGE_DIR
+    if not file_path:
+        candidate = STORAGE_DIR / original_file.split('/')[-1]
+        if candidate.exists():
+            file_path = candidate
+    
+    # 4. Try with STORAGE_DIR + relative path
+    if not file_path and '/' in original_file:
+        filename = original_file.replace('storage/datasets/', '').replace('storage\\datasets\\', '')
+        candidate = STORAGE_DIR / filename
+        if candidate.exists():
+            file_path = candidate
+    
+    # 5. Try with UUID + lowercase extension (onlydatasets are stored with lowercase)
+    if not file_path:
+        file_type_lower = dataset.file_type.value.lower()
+        # Extract UUID from original_file
+        uuid_match = str(dataset.id)
+        candidate = STORAGE_DIR / f"{uuid_match}.{file_type_lower}"
+        if candidate.exists():
+            file_path = candidate
+    
+    # 6. Try with UUID + uppercase extension (for backward compatibility)
+    if not file_path:
+        file_type_upper = dataset.file_type.value.upper()
+        candidate = STORAGE_DIR / f"{dataset.id}.{file_type_upper}"
+        if candidate.exists():
+            file_path = candidate
+    
+    if not file_path or not file_path.exists():
+        print(f"[DEBUG] Preview - File not found. original_file: {original_file}, STORAGE_DIR: {STORAGE_DIR}, Dataset ID: {dataset.id}, File Type: {dataset.file_type.value}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Dataset file not found. Expected at: {file_path}"
+            detail=f"Dataset file not found. Expected at: {STORAGE_DIR / f'{dataset.id}.{dataset.file_type.value.lower()}'}"
         )
     
     try:
         preview = await get_dataset_preview(str(file_path), dataset.file_type.value, limit)
-        print(f"[DEBUG] Preview generated successfully: {len(preview.get('sample_data', []))} rows")
-        return preview
     except Exception as e:
         import traceback
         error_detail = f"Error getting preview: {str(e)}\n{traceback.format_exc()}"
@@ -235,6 +274,8 @@ async def get_dataset_preview_endpoint(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error reading file: {str(e)}"
         )
+    
+    return preview
 
 
 @router.get("/{dataset_id}", response_model=DatasetResponse)
@@ -319,10 +360,46 @@ async def delete_dataset(
         )
     
     # Delete file if it exists
-    file_extension = f".{dataset.file_type.value}"
-    safe_filename = f"{dataset_id}{file_extension}"
-    file_path = STORAGE_DIR / safe_filename
-    if file_path.exists():
+    file_path = None
+    original_file = dataset.original_file
+    
+    # Try multiple path variations to find the file
+    candidate = Path(original_file)
+    if candidate.exists():
+        file_path = candidate
+    
+    if not file_path and not candidate.is_absolute():
+        if candidate.exists():
+            file_path = candidate.resolve()
+    
+    if not file_path:
+        candidate = STORAGE_DIR / original_file.split('/')[-1]
+        if candidate.exists():
+            file_path = candidate
+    
+    if not file_path and '/' in original_file:
+        filename = original_file.replace('storage/datasets/', '').replace('storage\\datasets\\', '')
+        candidate = STORAGE_DIR / filename
+        if candidate.exists():
+            file_path = candidate
+    
+    # Try with UUID + lowercase extension
+    if not file_path:
+        file_type_lower = dataset.file_type.value.lower()
+        candidate = STORAGE_DIR / f"{dataset.id}.{file_type_lower}"
+        if candidate.exists():
+            file_path = candidate
+    
+    # Try with UUID + uppercase extension
+    if not file_path:
+        file_type_upper = dataset.file_type.value.upper()
+        candidate = STORAGE_DIR / f"{dataset.id}.{file_type_upper}"
+        if candidate.exists():
+            file_path = candidate
+        if candidate.exists():
+            file_path = candidate
+    
+    if file_path and file_path.exists():
         file_path.unlink()
     
     await db.delete(dataset)
@@ -389,14 +466,48 @@ async def analyze_dataset_quality(
             detail="Dataset not found"
         )
     
-    file_extension = f".{dataset.file_type.value}"
-    safe_filename = f"{dataset_id}{file_extension}"
-    file_path = STORAGE_DIR / safe_filename
+    # Use the stored file path from the dataset record
+    file_path = None
+    original_file = dataset.original_file
     
-    if not file_path.exists():
+    # Try multiple path variations to find the file
+    candidate = Path(original_file)
+    if candidate.exists():
+        file_path = candidate
+    
+    if not file_path and not candidate.is_absolute():
+        if candidate.exists():
+            file_path = candidate.resolve()
+    
+    if not file_path:
+        candidate = STORAGE_DIR / original_file.split('/')[-1]
+        if candidate.exists():
+            file_path = candidate
+    
+    if not file_path and '/' in original_file:
+        filename = original_file.replace('storage/datasets/', '').replace('storage\\datasets\\', '')
+        candidate = STORAGE_DIR / filename
+        if candidate.exists():
+            file_path = candidate
+    
+    # Try with UUID + lowercase extension
+    if not file_path:
+        file_type_lower = dataset.file_type.value.lower()
+        candidate = STORAGE_DIR / f"{dataset.id}.{file_type_lower}"
+        if candidate.exists():
+            file_path = candidate
+    
+    # Try with UUID + uppercase extension
+    if not file_path:
+        file_type_upper = dataset.file_type.value.upper()
+        candidate = STORAGE_DIR / f"{dataset.id}.{file_type_upper}"
+        if candidate.exists():
+            file_path = candidate
+    
+    if not file_path or not file_path.exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Dataset file not found"
+            detail=f"Dataset file not found. Expected at: {STORAGE_DIR / f'{dataset.id}.{dataset.file_type.value.lower()}'}"
         )
     
     try:
@@ -406,6 +517,129 @@ async def analyze_dataset_quality(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error analyzing data quality: {str(e)}"
+        )
+
+
+@router.post("/{dataset_id}/clean")
+async def apply_cleaning_operations_endpoint(
+    dataset_id: uuid.UUID,
+    body: dict = Body(...),
+    current_user: dict = Depends(get_current_user_from_token),
+    db: AsyncSession = Depends(get_db)
+):
+    """Apply data cleaning and transformation operations to a dataset"""
+    
+    print(f"[DEBUG] Clean endpoint called for dataset: {dataset_id}")
+    print(f"[DEBUG] Request body: {body}")
+    print(f"[DEBUG] Current user: {current_user['user_id']}")
+    
+    stmt = select(Dataset).where(
+        (Dataset.id == dataset_id) &
+        (Dataset.user_id == uuid.UUID(current_user["user_id"]))
+    )
+    
+    result = await db.execute(stmt)
+    dataset = result.scalar_one_or_none()
+    
+    if not dataset:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Dataset not found"
+        )
+    
+    try:
+        # Get file path
+        file_path = None
+        original_file = dataset.original_file
+        
+        print(f"[DEBUG] Original file path from DB: {original_file}")
+        
+        # Try multiple path variations to find the file
+        candidate = Path(original_file)
+        if candidate.exists():
+            file_path = candidate
+            print(f"[DEBUG] Found file at: {file_path}")
+        
+        if not file_path and not candidate.is_absolute():
+            if candidate.exists():
+                file_path = candidate.resolve()
+                print(f"[DEBUG] Found file (resolver): {file_path}")
+        
+        if not file_path:
+            candidate = STORAGE_DIR / original_file.split('/')[-1]
+            if candidate.exists():
+                file_path = candidate
+                print(f"[DEBUG] Found file (STORAGE_DIR): {file_path}")
+        
+        if not file_path and '/' in original_file:
+            filename = original_file.replace('storage/datasets/', '').replace('storage\\datasets\\', '')
+            candidate = STORAGE_DIR / filename
+            if candidate.exists():
+                file_path = candidate
+                print(f"[DEBUG] Found file (cleaned path): {file_path}")
+        
+        if not file_path:
+            file_type_lower = dataset.file_type.value.lower()
+            candidate = STORAGE_DIR / f"{dataset.id}.{file_type_lower}"
+            if candidate.exists():
+                file_path = candidate
+                print(f"[DEBUG] Found file (with lowercase ext): {file_path}")
+        
+        if not file_path:
+            file_type_upper = dataset.file_type.value.upper()
+            candidate = STORAGE_DIR / f"{dataset.id}.{file_type_upper}"
+            if candidate.exists():
+                file_path = candidate
+                print(f"[DEBUG] Found file (with uppercase ext): {file_path}")
+        
+        if not file_path or not file_path.exists():
+            print(f"[ERROR] File not found after all attempts")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset file not found"
+            )
+        
+        print(f"[DEBUG] Final file path: {file_path}")
+        
+        # Apply transformations
+        operations = body.get('operations', [])
+        print(f"[DEBUG] Operations to apply: {operations}")
+        
+        if not operations:
+            print(f"[DEBUG] No operations provided, returning success")
+            return {"success": True, "message": "No operations to apply"}
+        
+        # Create a backup and process the file
+        print(f"[DEBUG] Calling apply_cleaning_operations...")
+        result = await apply_cleaning_operations(
+            str(dataset_id),
+            str(file_path),
+            dataset.file_type.value,
+            operations,
+            str(file_path)  # Overwrite the original file
+        )
+        print(f"[DEBUG] Operation result: {result}")
+        
+        # Update dataset metadata
+        dataset.row_count = result.get('row_count', dataset.row_count)
+        dataset.column_count = result.get('column_count', dataset.column_count)
+        dataset.columns_metadata = result.get('columns_metadata', dataset.columns_metadata)
+        
+        await db.commit()
+        
+        return {
+            "success": True,
+            "message": "Cleaning operations applied successfully",
+            "result": result
+        }
+        
+    except Exception as e:
+        print(f"[ERROR] Cleaning operation failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error applying cleaning operations: {str(e)}"
         )
 
 
@@ -432,11 +666,45 @@ async def get_column_stats(
             detail="Dataset not found"
         )
     
-    file_extension = f".{dataset.file_type.value}"
-    safe_filename = f"{dataset_id}{file_extension}"
-    file_path = STORAGE_DIR / safe_filename
+    # Use the stored file path from the dataset record
+    file_path = None
+    original_file = dataset.original_file
     
-    if not file_path.exists():
+    # Try multiple path variations to find the file
+    candidate = Path(original_file)
+    if candidate.exists():
+        file_path = candidate
+    
+    if not file_path and not candidate.is_absolute():
+        if candidate.exists():
+            file_path = candidate.resolve()
+    
+    if not file_path:
+        candidate = STORAGE_DIR / original_file.split('/')[-1]
+        if candidate.exists():
+            file_path = candidate
+    
+    if not file_path and '/' in original_file:
+        filename = original_file.replace('storage/datasets/', '').replace('storage\\datasets\\', '')
+        candidate = STORAGE_DIR / filename
+        if candidate.exists():
+            file_path = candidate
+    
+    # Try with UUID + lowercase extension
+    if not file_path:
+        file_type_lower = dataset.file_type.value.lower()
+        candidate = STORAGE_DIR / f"{dataset.id}.{file_type_lower}"
+        if candidate.exists():
+            file_path = candidate
+    
+    # Try with UUID + uppercase extension
+    if not file_path:
+        file_type_upper = dataset.file_type.value.upper()
+        candidate = STORAGE_DIR / f"{dataset.id}.{file_type_upper}"
+        if candidate.exists():
+            file_path = candidate
+    
+    if not file_path or not file_path.exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Dataset file not found"
@@ -475,11 +743,45 @@ async def apply_dataset_cleaning(
             detail="Dataset not found"
         )
     
-    file_extension = f".{dataset.file_type.value}"
-    safe_filename = f"{dataset_id}{file_extension}"
-    file_path = STORAGE_DIR / safe_filename
+    # Use the stored file path from the dataset record
+    file_path = None
+    original_file = dataset.original_file
     
-    if not file_path.exists():
+    # Try multiple path variations to find the file
+    candidate = Path(original_file)
+    if candidate.exists():
+        file_path = candidate
+    
+    if not file_path and not candidate.is_absolute():
+        if candidate.exists():
+            file_path = candidate.resolve()
+    
+    if not file_path:
+        candidate = STORAGE_DIR / original_file.split('/')[-1]
+        if candidate.exists():
+            file_path = candidate
+    
+    if not file_path and '/' in original_file:
+        filename = original_file.replace('storage/datasets/', '').replace('storage\\datasets\\', '')
+        candidate = STORAGE_DIR / filename
+        if candidate.exists():
+            file_path = candidate
+    
+    # Try with UUID + lowercase extension
+    if not file_path:
+        file_type_lower = dataset.file_type.value.lower()
+        candidate = STORAGE_DIR / f"{dataset.id}.{file_type_lower}"
+        if candidate.exists():
+            file_path = candidate
+    
+    # Try with UUID + uppercase extension
+    if not file_path:
+        file_type_upper = dataset.file_type.value.upper()
+        candidate = STORAGE_DIR / f"{dataset.id}.{file_type_upper}"
+        if candidate.exists():
+            file_path = candidate
+    
+    if not file_path or not file_path.exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Dataset file not found"
@@ -560,11 +862,45 @@ async def preview_cleaning_operations(
             detail="Dataset not found"
         )
     
-    file_extension = f".{dataset.file_type.value}"
-    safe_filename = f"{dataset_id}{file_extension}"
-    file_path = STORAGE_DIR / safe_filename
+    # Use the stored file path from the dataset record
+    file_path = None
+    original_file = dataset.original_file
     
-    if not file_path.exists():
+    # Try multiple path variations to find the file
+    candidate = Path(original_file)
+    if candidate.exists():
+        file_path = candidate
+    
+    if not file_path and not candidate.is_absolute():
+        if candidate.exists():
+            file_path = candidate.resolve()
+    
+    if not file_path:
+        candidate = STORAGE_DIR / original_file.split('/')[-1]
+        if candidate.exists():
+            file_path = candidate
+    
+    if not file_path and '/' in original_file:
+        filename = original_file.replace('storage/datasets/', '').replace('storage\\datasets\\', '')
+        candidate = STORAGE_DIR / filename
+        if candidate.exists():
+            file_path = candidate
+    
+    # Try with UUID + lowercase extension
+    if not file_path:
+        file_type_lower = dataset.file_type.value.lower()
+        candidate = STORAGE_DIR / f"{dataset.id}.{file_type_lower}"
+        if candidate.exists():
+            file_path = candidate
+    
+    # Try with UUID + uppercase extension
+    if not file_path:
+        file_type_upper = dataset.file_type.value.upper()
+        candidate = STORAGE_DIR / f"{dataset.id}.{file_type_upper}"
+        if candidate.exists():
+            file_path = candidate
+    
+    if not file_path or not file_path.exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Dataset file not found"

@@ -7,36 +7,36 @@ import enum
 
 class ChartType(str, enum.Enum):
     # Basic Charts (existing)
-    LINE = "line"
-    BAR = "bar"
-    AREA = "area"
-    SCATTER = "scatter"
+    LINE = "LINE"
+    BAR = "BAR"
+    AREA = "AREA"
+    SCATTER = "SCATTER"
     
     # Distribution & Statistical
-    PIE = "pie"
-    DONUT = "donut"
-    HISTOGRAM = "histogram"
-    BOX = "box"
+    PIE = "PIE"
+    DONUT = "DONUT"
+    HISTOGRAM = "HISTOGRAM"
+    BOX = "BOX"
     
     # Metrics & KPIs
-    KPI_CARD = "kpi_card"  # Single metric display
-    GAUGE = "gauge"  # Speedometer style gauge
+    KPI_CARD = "KPI_CARD"
+    GAUGE = "GAUGE"
     
     # Mixed & Combined
-    COMBO = "combo"  # Line + Bar combined
+    COMBO = "COMBO"
     
     # Hierarchical & Flow
-    TREEMAP = "treemap"  # Hierarchical rectangles
-    WATERFALL = "waterfall"  # Sequential changes
-    FUNNEL = "funnel"  # Funnel/conversion flow
+    TREEMAP = "TREEMAP"
+    WATERFALL = "WATERFALL"
+    FUNNEL = "FUNNEL"
     
     # Advanced
-    BUBBLE = "bubble"  # Scatter with size dimension
-    HEATMAP = "heatmap"  # Matrix with color intensity
+    BUBBLE = "BUBBLE"
+    HEATMAP = "HEATMAP"
     
     # Data Display
-    TABLE = "table"
-    MATRIX = "matrix"  # Pivot table with drill-down
+    TABLE = "TABLE"
+    MATRIX = "MATRIX"
 
 
 class Chart(BaseModel):
@@ -46,8 +46,12 @@ class Chart(BaseModel):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
-    chart_type = Column(Enum(ChartType), nullable=False)
-    config = Column(JSON, default=dict)  # Stores chart configuration
+    chart_type = Column(Enum(ChartType, native_enum=False), nullable=False)
+    config = Column(JSON, default=dict, nullable=False)  # Stores chart configuration
+    
+    def __repr__(self):
+        return f"<Chart {self.name}>"
+
     
     def __repr__(self):
         return f"<Chart {self.name}>"

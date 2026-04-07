@@ -24,8 +24,8 @@ class ChartService:
             
             if file_path.endswith('.csv'):
                 return pd.read_csv(file_path)
-            elif file_path.endswith('.xlsx'):
-                return pd.read_excel(file_path)
+            elif file_path.endswith('.xlsx') or file_path.endswith('.xls'):
+                return pd.read_excel(file_path, engine=None)  # Auto-detect engine
             elif file_path.endswith('.json'):
                 return pd.read_json(file_path)
             else:
@@ -51,12 +51,48 @@ class ChartService:
         return str(obj)
     
     @staticmethod
+    def _convert_dax_to_pandas(formula: str, columns: list) -> str:
+        """Convert DAX/SQL-like formulas to pandas syntax"""
+        import re
+        
+        if not formula:
+            return formula
+        
+        result = formula
+        
+        # Common DAX/SQL to pandas conversions
+        conversions = {
+            r'\bSUM\s*\(\s*(\w+)\s*\)': r'df["\1"].sum()',
+            r'\bAVG\s*\(\s*(\w+)\s*\)': r'df["\1"].mean()',
+            r'\bCOUNT\s*\(\s*(\w+)\s*\)': r'df["\1"].count()',
+            r'\bCOUNTDISTINCT\s*\(\s*(\w+)\s*\)': r'df["\1"].nunique()',
+            r'\bMIN\s*\(\s*(\w+)\s*\)': r'df["\1"].min()',
+            r'\bMAX\s*\(\s*(\w+)\s*\)': r'df["\1"].max()',
+            r'\bSTDDEV\s*\(\s*(\w+)\s*\)': r'df["\1"].std()',
+            r'\bVAR\s*\(\s*(\w+)\s*\)': r'df["\1"].var()',
+        }
+        
+        for pattern, replacement in conversions.items():
+            result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+        
+        # Handle simple column references wrapped in df[]
+        # Replace bare column names with df["column_name"] if they exist
+        for col in columns:
+            # Only replace if not already wrapped in df[]
+            pattern = rf'(?<!df\[")(?<!df\[\')(?<!\w){re.escape(col)}(?<!\w)(?!"\])(?!\'\])'
+            replacement = f'df["{col}"]'
+            result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+        
+        return result
+    
+    @staticmethod
     async def generate_chart_data(
         file_path: str,
         chart_type: str,
         dimensions: Optional[List[str]] = None,
         measures: Optional[List[str]] = None,
-        config: Optional[Dict[str, Any]] = None
+        config: Optional[Dict[str, Any]] = None,
+        measure_formulas: Optional[Dict[str, Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
         Generate chart data based on dataset and configuration
@@ -65,8 +101,9 @@ class ChartService:
             file_path: Path to cleaned dataset
             chart_type: Type of chart (line, bar, pie, etc.)
             dimensions: Column names for dimensions (X-axis)
-            measures: Column names for measures (Y-axis/values)
+            measures: Column names for measures (Y-axis/values) - can be raw columns or custom measure names
             config: Additional chart configuration
+            measure_formulas: Dictionary mapping measure names to their formulas and metadata
         
         Returns:
             Dictionary with chart data and configuration
@@ -79,6 +116,11 @@ class ChartService:
                 dimensions = []
             if measures is None:
                 measures = []
+            if measure_formulas is None:
+                measure_formulas = {}
+            
+            # Normalize chart type to lowercase for comparison
+            chart_type = chart_type.lower() if isinstance(chart_type, str) else str(chart_type).lower()
             
             # Resolve file path
             resolved_path = ChartService._resolve_file_path(file_path)
@@ -86,11 +128,37 @@ class ChartService:
             # Read dataset
             df = ChartService._read_cleaned_dataset(resolved_path)
             
-            # Validate columns
-            all_cols = list(set(dimensions + measures))
-            missing_cols = [col for col in all_cols if col not in df.columns]
+            # Add custom measures as calculated columns
+            for measure_name, measure_info in measure_formulas.items():
+                formula = measure_info.get("formula", "")
+                if formula and measure_name not in df.columns:
+                    try:
+                        # Convert DAX/SQL-like formulas to pandas equivalents
+                        pandas_formula = ChartService._convert_dax_to_pandas(formula, df.columns)
+                        # Evaluate formula - simple pandas expressions or calculated values
+                        if pandas_formula:
+                            df[measure_name] = eval(pandas_formula, {"df": df, "__builtins__": {}})
+                        else:
+                            df[measure_name] = 0  # Default to 0 if formula can't be parsed
+                    except Exception as e:
+                        # If formula evaluation fails, skip this measure
+                        print(f"Warning: Could not evaluate formula for measure {measure_name}: {str(e)}")
+                        # Still create the column with zeros so chart doesn't fail
+                        df[measure_name] = 0
+            
+            # Validate columns - only check raw columns and dimensions, not custom measures
+            # Custom measures are now in df.columns after evaluation above
+            raw_dimensions = [d for d in dimensions if d not in measure_formulas]
+            all_raw_cols = list(set(raw_dimensions))
+            missing_cols = [col for col in all_raw_cols if col not in df.columns]
+            
             if missing_cols:
                 raise ValueError(f"Columns not found in dataset: {missing_cols}")
+            
+            # Verify that all measures (raw or custom) exist in the dataframe
+            for measure in measures:
+                if measure not in df.columns:
+                    raise ValueError(f"Measure '{measure}' not found - ensure formula is valid or column exists")
             
             # Generate data based on chart type
             if chart_type == 'line':
@@ -573,11 +641,23 @@ class ChartService:
         meas = measures[0]
         grouped = df.groupby(dim)[meas].sum().reset_index().head(10)  # Limit to 10 categories
         
+        categories = [str(val) for val in grouped[dim]]
         values = [ChartService._convert_to_serializable(val) for val in grouped[meas]]
         
+        # Convert to waterfall format for EChart
+        waterfall_data = []
+        cumulative = 0
+        for i, val in enumerate(values):
+            if i == 0:
+                waterfall_data.append(val)
+                cumulative = val
+            else:
+                waterfall_data.append(val)
+                cumulative += val
+        
         return {
-            "categories": [str(val) for val in grouped[dim]],
-            "values": values,
+            "xAxisData": categories,
+            "data": waterfall_data,
             "cumulative": list(pd.Series(values).cumsum())
         }
 

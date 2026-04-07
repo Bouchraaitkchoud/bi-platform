@@ -13,7 +13,7 @@ class ChartBase(BaseModel):
 
 class ChartCreate(ChartBase):
     dataset_id: UUID
-    config: Dict[str, Any] = {}
+    config: Optional[Dict[str, Any]] = None
 
 
 class ChartUpdate(BaseModel):

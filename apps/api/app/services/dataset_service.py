@@ -7,13 +7,20 @@ import uuid
 async def extract_dataset_metadata(file_path: str, file_type: str) -> Dict[str, Any]:
     """
     Extract metadata from a dataset file
+    Supports: CSV, Excel (.xls, .xlsx), JSON
+    File types can be uppercase or lowercase
     """
     try:
-        if file_type == "csv":
+        # Normalize to lowercase for comparison
+        file_type_lower = file_type.lower()
+        
+        if file_type_lower == "csv":
             df = pd.read_csv(file_path)
-        elif file_type == "xlsx":
-            df = pd.read_excel(file_path)
-        elif file_type == "json":
+        elif file_type_lower in ("xlsx", "xls"):
+            # Handle both Excel formats
+            # pandas automatically detects format from extension
+            df = pd.read_excel(file_path, engine=None)
+        elif file_type_lower == "json":
             df = pd.read_json(file_path)
         else:
             raise ValueError(f"Unsupported file type: {file_type}")
@@ -45,13 +52,20 @@ async def extract_dataset_metadata(file_path: str, file_type: str) -> Dict[str, 
 async def get_dataset_preview(file_path: str, file_type: str, limit: int = 100000):
     """
     Get a preview of dataset data
+    Supports: CSV, Excel (.xls, .xlsx), JSON
+    File types can be uppercase or lowercase
     """
     try:
-        if file_type == "csv":
+        # Normalize to lowercase for comparison
+        file_type_lower = file_type.lower()
+        
+        if file_type_lower == "csv":
             df = pd.read_csv(file_path, nrows=limit)
-        elif file_type == "xlsx":
-            df = pd.read_excel(file_path, nrows=limit)
-        elif file_type == "json":
+        elif file_type_lower in ("xlsx", "xls"):
+            # Handle both Excel formats
+            # pandas automatically detects format from extension
+            df = pd.read_excel(file_path, nrows=limit, engine=None)
+        elif file_type_lower == "json":
             df = pd.read_json(file_path)
             df = df.head(limit)
         else:

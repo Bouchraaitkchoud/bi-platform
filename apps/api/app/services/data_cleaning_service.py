@@ -8,13 +8,17 @@ async def analyze_data_quality(file_path: str, file_type: str) -> Dict[str, Any]
     """
     Analyze dataset for data quality issues
     Returns statistics about missing values, duplicates, data types
+    File type can be uppercase or lowercase
     """
     try:
-        if file_type == "csv":
+        # Normalize to lowercase for comparison
+        file_type_lower = file_type.lower()
+        
+        if file_type_lower == "csv":
             df = pd.read_csv(file_path)
-        elif file_type == "xlsx":
-            df = pd.read_excel(file_path)
-        elif file_type == "json":
+        elif file_type_lower in ("xlsx", "xls"):
+            df = pd.read_excel(file_path, engine=None)  # Auto-detect engine
+        elif file_type_lower == "json":
             df = pd.read_json(file_path)
         else:
             raise ValueError(f"Unsupported file type: {file_type}")
@@ -62,13 +66,17 @@ async def analyze_data_quality(file_path: str, file_type: str) -> Dict[str, Any]
 async def get_column_statistics(file_path: str, file_type: str, column_name: str) -> Dict[str, Any]:
     """
     Get detailed statistics for a specific column
+    File type can be uppercase or lowercase
     """
     try:
-        if file_type == "csv":
+        # Normalize to lowercase for comparison
+        file_type_lower = file_type.lower()
+        
+        if file_type_lower == "csv":
             df = pd.read_csv(file_path)
-        elif file_type == "xlsx":
-            df = pd.read_excel(file_path)
-        elif file_type == "json":
+        elif file_type_lower in ("xlsx", "xls"):
+            df = pd.read_excel(file_path, engine=None)  # Auto-detect engine
+        elif file_type_lower == "json":
             df = pd.read_json(file_path)
         else:
             raise ValueError(f"Unsupported file type: {file_type}")

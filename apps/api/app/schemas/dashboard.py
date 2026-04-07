@@ -22,6 +22,12 @@ class DashboardUpdate(BaseModel):
     chart_ids: Optional[List[UUID]] = None
 
 
+class DashboardPermissions(BaseModel):
+    can_view: bool = True
+    can_edit: bool = False
+    can_comment: bool = False
+
+
 class DashboardResponse(DashboardBase):
     id: UUID
     user_id: UUID
@@ -29,6 +35,7 @@ class DashboardResponse(DashboardBase):
     chart_ids: List[UUID]
     created_at: datetime
     updated_at: datetime
+    permissions: Optional[DashboardPermissions] = None
     
     class Config:
         from_attributes = True

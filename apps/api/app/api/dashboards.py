@@ -8,7 +8,7 @@ import uuid
 from app.core.database import get_db
 from app.core.security import verify_token
 from app.core.dependencies import get_current_user
-from app.schemas.dashboard import DashboardCreate, DashboardResponse, DashboardUpdate
+from app.schemas.dashboard import DashboardCreate, DashboardResponse, DashboardUpdate, DashboardPermissions
 from app.models.dashboard import Dashboard
 from app.models.share import Share
 
@@ -99,9 +99,12 @@ async def get_dashboard(
     result = await db.execute(stmt)
     dashboard = result.scalar_one_or_none()
     
+    # Default permissions for owned dashboard
+    permissions = None
+    
     # If user doesn't own it, check if it's shared with them
     if not dashboard:
-        share_stmt = select(Dashboard).join(
+        share_stmt = select(Dashboard, Share).join(
             Share,
             (Share.dashboard_id == Dashboard.id) &
             (Share.shared_with_user_id == current_user_id) &
@@ -109,7 +112,23 @@ async def get_dashboard(
         ).where(Dashboard.id == dashboard_id)
         
         share_result = await db.execute(share_stmt)
-        dashboard = share_result.scalar_one_or_none()
+        share_row = share_result.one_or_none()
+        
+        if share_row:
+            dashboard, share = share_row
+            # Set permissions from the share record
+            permissions = DashboardPermissions(
+                can_view=share.can_view,
+                can_edit=share.can_edit,
+                can_comment=share.can_comment
+            )
+    else:
+        # User owns the dashboard, so they have all permissions
+        permissions = DashboardPermissions(
+            can_view=True,
+            can_edit=True,
+            can_comment=True
+        )
     
     if not dashboard:
         raise HTTPException(
@@ -117,7 +136,18 @@ async def get_dashboard(
             detail="Dashboard not found or access denied"
         )
     
-    return dashboard
+    # Return DashboardResponse with permissions
+    return DashboardResponse(
+        id=dashboard.id,
+        name=dashboard.name,
+        description=dashboard.description,
+        user_id=dashboard.user_id,
+        layout_config=dashboard.layout_config,
+        chart_ids=dashboard.chart_ids,
+        created_at=dashboard.created_at,
+        updated_at=dashboard.updated_at,
+        permissions=permissions
+    )
 
 
 @router.put("/{dashboard_id}", response_model=DashboardResponse)
@@ -127,20 +157,35 @@ async def update_dashboard(
     current_user: dict = Depends(get_current_user_from_token),
     db: AsyncSession = Depends(get_db)
 ):
-    """Update dashboard"""
+    """Update dashboard - allows update if user owns it or has edit permission on shared dashboard"""
     
+    current_user_id = uuid.UUID(current_user["user_id"])
+    
+    # Check if user owns the dashboard
     stmt = select(Dashboard).where(
         (Dashboard.id == dashboard_id) &
-        (Dashboard.user_id == uuid.UUID(current_user["user_id"]))
+        (Dashboard.user_id == current_user_id)
     )
     
     result = await db.execute(stmt)
     dashboard = result.scalar_one_or_none()
     
+    # If user doesn't own it, check if it's shared with edit permission
+    if not dashboard:
+        share_stmt = select(Dashboard).join(
+            Share,
+            (Share.dashboard_id == Dashboard.id) &
+            (Share.shared_with_user_id == current_user_id) &
+            (Share.can_edit == True)
+        ).where(Dashboard.id == dashboard_id)
+        
+        share_result = await db.execute(share_stmt)
+        dashboard = share_result.scalar_one_or_none()
+    
     if not dashboard:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Dashboard not found"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Dashboard not found or you don't have edit permission"
         )
     
     if dashboard_update.name:

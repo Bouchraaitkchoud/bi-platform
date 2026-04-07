@@ -5,7 +5,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 import uvicorn
 
 from app.core.config import settings
-from app.api import auth, datasets, charts, dashboards, filters, shares, relationships, users
+from app.api import auth, datasets, charts, dashboards, filters, shares, relationships, users, modeling, warehouse
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -39,6 +39,8 @@ app.include_router(filters.router, prefix=settings.API_V1_STR)
 app.include_router(shares.router, prefix=settings.API_V1_STR)
 app.include_router(relationships.router, prefix=settings.API_V1_STR)
 app.include_router(users.router, prefix=settings.API_V1_STR)
+app.include_router(modeling.router, prefix=settings.API_V1_STR)
+app.include_router(warehouse.router, prefix=settings.API_V1_STR)
 
 @app.get("/")
 async def root():

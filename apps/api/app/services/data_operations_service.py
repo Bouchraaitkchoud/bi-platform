@@ -20,11 +20,14 @@ class DataOperationsService:
     def load_dataframe(file_path: str, file_type: str) -> pd.DataFrame:
         """Load a file into a pandas DataFrame"""
         try:
-            if file_type == "csv":
+            # Normalize to lowercase for comparison
+            file_type_lower = file_type.lower()
+            
+            if file_type_lower == "csv":
                 return pd.read_csv(file_path)
-            elif file_type == "xlsx":
+            elif file_type_lower in ("xlsx", "xls"):
                 return pd.read_excel(file_path, sheet_name=0)
-            elif file_type == "json":
+            elif file_type_lower == "json":
                 return pd.read_json(file_path)
             else:
                 raise ValueError(f"Unsupported file type: {file_type}")
@@ -35,11 +38,14 @@ class DataOperationsService:
     def save_dataframe(df: pd.DataFrame, file_path: str, file_type: str) -> None:
         """Save a DataFrame to a file"""
         try:
-            if file_type == "csv":
+            # Normalize to lowercase for comparison
+            file_type_lower = file_type.lower()
+            
+            if file_type_lower == "csv":
                 df.to_csv(file_path, index=False)
-            elif file_type == "xlsx":
+            elif file_type_lower in ("xlsx", "xls"):
                 df.to_excel(file_path, index=False, sheet_name="Sheet1")
-            elif file_type == "json":
+            elif file_type_lower == "json":
                 df.to_json(file_path, orient="records", indent=2)
             else:
                 raise ValueError(f"Unsupported file type: {file_type}")
