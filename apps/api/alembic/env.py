@@ -1,11 +1,18 @@
 """Alembic environment configuration."""
 
+import sys
+from pathlib import Path
+
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
 from alembic import context
+
+# Add the parent directory to sys.path so we can import 'app'
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from app.core.config import settings
 from app.models.base import Base
 # Import all models to register them with the Base metadata
@@ -15,6 +22,7 @@ from app.models.chart import Chart
 from app.models.dashboard import Dashboard
 from app.models.share import Share
 from app.models.relationship import Relationship, Measure, CalculatedColumn, Hierarchy
+from app.models.transformation import Transformation
 
 # this is the Alembic Config object
 config = context.config

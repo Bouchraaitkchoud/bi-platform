@@ -14,6 +14,7 @@ class User(BaseModel):
     role = Column(String(50), nullable=False, default="user")  # admin, user, viewer
     is_active = Column(Boolean, default=True)
     last_login = Column(DateTime(timezone=True), nullable=True)
+    last_activity = Column(DateTime(timezone=True), nullable=True)  # For session expiry tracking (30 min inactivity)
     
     def __repr__(self):
         return f"<User {self.email}>"

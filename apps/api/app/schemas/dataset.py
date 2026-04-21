@@ -38,6 +38,6 @@ class DatasetResponse(DatasetBase):
 class DatasetPreview(BaseModel):
     """Represents a preview of dataset data"""
     columns: list
-    sample_data: list
+    data: list
     row_count: int
     column_count: int

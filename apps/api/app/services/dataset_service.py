@@ -1,8 +1,39 @@
 # apps/api/app/services/dataset_service.py
 import pandas as pd
+import numpy as np
 from typing import Dict, Any
+import asyncio
 import uuid
 
+
+def _extract_metadata_sync(file_path: str, file_type_lower: str) -> Dict[str, Any]:
+    if file_type_lower == "csv":
+        df = pd.read_csv(file_path)
+    elif file_type_lower in ("xlsx", "xls"):
+        df = pd.read_excel(file_path, engine=None)
+    elif file_type_lower == "json":
+        df = pd.read_json(file_path)
+    else:
+        raise ValueError(f"Unsupported file type: {file_type_lower}")
+    
+    columns_metadata = {
+        "columns": [
+            {
+                "name": str(col),
+                "type": str(df[col].dtype),
+                "null_count": int(df[col].isna().sum()),
+                "unique_count": int(df[col].nunique()),
+            }
+            for col in df.columns
+        ]
+    }
+    
+    return {
+        "row_count": len(df),
+        "column_count": len(df.columns),
+        "columns_metadata": columns_metadata,
+        "file_size": 0
+    }
 
 async def extract_dataset_metadata(file_path: str, file_type: str) -> Dict[str, Any]:
     """
@@ -11,43 +42,33 @@ async def extract_dataset_metadata(file_path: str, file_type: str) -> Dict[str, 
     File types can be uppercase or lowercase
     """
     try:
-        # Normalize to lowercase for comparison
         file_type_lower = file_type.lower()
-        
-        if file_type_lower == "csv":
-            df = pd.read_csv(file_path)
-        elif file_type_lower in ("xlsx", "xls"):
-            # Handle both Excel formats
-            # pandas automatically detects format from extension
-            df = pd.read_excel(file_path, engine=None)
-        elif file_type_lower == "json":
-            df = pd.read_json(file_path)
-        else:
-            raise ValueError(f"Unsupported file type: {file_type}")
-        
-        # Extract column information
-        columns_metadata = {
-            "columns": [
-                {
-                    "name": str(col),
-                    "type": str(df[col].dtype),
-                    "null_count": int(df[col].isna().sum()),
-                    "unique_count": int(df[col].nunique()),
-                }
-                for col in df.columns
-            ]
-        }
-        
-        return {
-            "row_count": len(df),
-            "column_count": len(df.columns),
-            "columns_metadata": columns_metadata,
-            "file_size": 0  # Will be set separately
-        }
-        
+        return await asyncio.to_thread(_extract_metadata_sync, file_path, file_type_lower)
     except Exception as e:
         raise Exception(f"Error extracting metadata: {str(e)}")
 
+
+def _get_preview_sync(file_path: str, file_type_lower: str, limit: int) -> Dict[str, Any]:
+    if file_type_lower == "csv":
+        df = pd.read_csv(file_path, nrows=limit)
+    elif file_type_lower in ("xlsx", "xls"):
+        df = pd.read_excel(file_path, nrows=limit, engine=None)
+    elif file_type_lower == "json":
+        df = pd.read_json(file_path)
+        df = df.head(limit)
+    else:
+        raise ValueError(f"Unsupported file type: {file_type_lower}")
+    
+    # Fast NaN to None conversion and dictionary serialization
+    df = df.replace({np.nan: None})
+    data = df.to_dict(orient="records")
+    
+    return {
+        "columns": list(df.columns),
+        "data": data,
+        "row_count": len(df),
+        "column_count": len(df.columns)
+    }
 
 async def get_dataset_preview(file_path: str, file_type: str, limit: int = 100000):
     """
@@ -56,32 +77,7 @@ async def get_dataset_preview(file_path: str, file_type: str, limit: int = 10000
     File types can be uppercase or lowercase
     """
     try:
-        # Normalize to lowercase for comparison
         file_type_lower = file_type.lower()
-        
-        if file_type_lower == "csv":
-            df = pd.read_csv(file_path, nrows=limit)
-        elif file_type_lower in ("xlsx", "xls"):
-            # Handle both Excel formats
-            # pandas automatically detects format from extension
-            df = pd.read_excel(file_path, nrows=limit, engine=None)
-        elif file_type_lower == "json":
-            df = pd.read_json(file_path)
-            df = df.head(limit)
-        else:
-            raise ValueError(f"Unsupported file type: {file_type}")
-        
-        # Convert dataframe to list of lists, handling NaN values
-        sample_data = []
-        for _, row in df.iterrows():
-            sample_data.append(row.fillna(None).tolist())
-        
-        return {
-            "columns": list(df.columns),
-            "sample_data": sample_data,
-            "row_count": len(df),
-            "column_count": len(df.columns)
-        }
-        
+        return await asyncio.to_thread(_get_preview_sync, file_path, file_type_lower, limit)
     except Exception as e:
         raise Exception(f"Error getting preview: {str(e)}")

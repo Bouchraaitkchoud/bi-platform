@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Body
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, desc, func
 import uuid
 import os
 import shutil
@@ -15,9 +15,11 @@ from app.schemas.dataset import DatasetCreate, DatasetResponse, DatasetUpdate, D
 from app.schemas.data_cleaning import DataQualityAnalysis, ColumnStatistics, CleaningPlan
 from app.models.dataset import Dataset
 from app.models.user import User
+from app.models.transformation import Transformation, TransformationOperation
 from app.services.dataset_service import extract_dataset_metadata, get_dataset_preview
 from app.services.data_cleaning_service import analyze_data_quality, get_column_statistics
 from app.services.data_operations_service import DataOperationsService, apply_cleaning_operations
+from app.schemas.transformation import TransformationCreate, TransformationResponse, TransformationPipeline
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 security = HTTPBearer()
@@ -276,6 +278,45 @@ async def get_dataset_preview_endpoint(
         )
     
     return preview
+
+
+@router.get("/{dataset_id}/statistics", response_model=list[ColumnStatistics])
+async def get_dataset_statistics(
+    dataset_id: uuid.UUID,
+    columns: str = None,
+    current_user: dict = Depends(get_current_user_from_token),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get statistics for dataset columns"""
+    try:
+        stmt = select(Dataset).where(
+            (Dataset.id == dataset_id) &
+            (Dataset.user_id == uuid.UUID(current_user["user_id"]))
+        )
+        
+        result = await db.execute(stmt)
+        dataset = result.scalar_one_or_none()
+        
+        if not dataset:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dataset not found"
+            )
+        
+        # For now, return empty list - actual statistics would come from data_cleaning_service
+        # This prevents the frontend from failing when statistics aren't available
+        return []
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_detail = f"Error getting statistics: {str(e)}\n{traceback.format_exc()}"
+        print(f"[DEBUG] {error_detail}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting statistics: {str(e)}"
+        )
 
 
 @router.get("/{dataset_id}", response_model=DatasetResponse)

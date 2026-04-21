@@ -14,8 +14,10 @@ class Settings(BaseSettings):
     
     # Security
     SECRET_KEY: str
+    ENCRYPTION_KEY: str
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    # Token expiry times are now hardcoded in security.py (24h access, 7d refresh)
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # Deprecated - kept for backward compat
     
     # Database
     POSTGRES_SERVER: str = "localhost"
@@ -79,6 +81,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = 'allow'
 
 
 settings = Settings()
