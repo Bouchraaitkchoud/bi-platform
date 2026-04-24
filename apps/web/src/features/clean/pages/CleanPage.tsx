@@ -8,7 +8,7 @@ import { useDatasetStore } from '@/stores/datasetStore';
 import { DatasetService } from '@/lib/services/DatasetService';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/Spinner';
-import { Settings2, X, Plus, Filter, Type, Trash2, SplitSquareHorizontal, Combine, Undo2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Settings2, X, Plus, Filter, Type, Trash2, SplitSquareHorizontal, Combine, Undo2, ChevronDown, ChevronUp, Download } from 'lucide-react';
 
 interface CleanPageProps {
   datasetId?: string;
@@ -143,6 +143,45 @@ export const CleanPage: React.FC<CleanPageProps> = ({ datasetId }) => {
     setAppliedSteps(appliedSteps.filter((_, i) => i !== index));
   };
 
+  const exportData = (format: 'csv' | 'json') => {
+    let content = '';
+    let filename = `cleaned_data_${new Date().toISOString().slice(0, 10)}`;
+
+    if (format === 'csv') {
+      // Create CSV content
+      const headers = columns.join(',');
+      const rows = rowData.map(row =>
+        columns.map(col => {
+          const value = row[col];
+          // Escape quotes and wrap in quotes if contains comma
+          if (typeof value === 'string' && value.includes(',')) {
+            return `"${value.replace(/"/g, '""')}"`;
+          }
+          return value;
+        }).join(',')
+      );
+      content = [headers, ...rows].join('\n');
+      filename += '.csv';
+    } else {
+      // Create JSON content
+      content = JSON.stringify(rowData, null, 2);
+      filename += '.json';
+    }
+
+    // Create blob and download
+    const blob = new Blob([content], { type: format === 'csv' ? 'text/csv' : 'application/json' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    setTransformMessage(`Data exported as ${format.toUpperCase()} (${rowData.length} rows)`);
+  };
+
   if (loading) {
     return <div className="h-screen w-full flex items-center justify-center bg-gray-50"><Spinner /></div>;
   }
@@ -200,8 +239,23 @@ export const CleanPage: React.FC<CleanPageProps> = ({ datasetId }) => {
             <span className="text-sm text-gray-600">{activeDataset?.name || 'Dataset'}</span>
           </div>
           <div className="flex items-center gap-2">
-            <Button size="sm" className="h-7 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700" onClick={() => router.push('/datasets')}>Close</Button>
-            <Button size="sm" className="h-7 text-xs bg-blue-500 hover:bg-blue-600 text-white border-none px-4" onClick={() => router.push(`/datasets/${currentDatasetId}/model`)}>
+            <Button size="sm" className="h-7 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700" onClick={() => router.push('/datasets')}>Close</Button>            <div className="flex items-center gap-1 bg-gray-100 rounded px-2 py-1">
+              <button 
+                onClick={() => exportData('csv')}
+                title="Download as CSV"
+                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-white rounded transition-colors"
+              >
+                <Download size={14} /> CSV
+              </button>
+              <div className="w-px h-4 bg-gray-300"></div>
+              <button 
+                onClick={() => exportData('json')}
+                title="Download as JSON"
+                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-white rounded transition-colors"
+              >
+                <Download size={14} /> JSON
+              </button>
+            </div>            <Button size="sm" className="h-7 text-xs bg-blue-500 hover:bg-blue-600 text-white border-none px-4" onClick={() => router.push(`/datasets/${currentDatasetId}/model`)}>
               Next: Modeling \u2192
             </Button>
             <Button size="sm" className="h-7 text-xs bg-[#f3c11b] hover:bg-[#d6a80f] text-gray-900 border-none px-4" onClick={() => router.push(`/datasets/${currentDatasetId}/model`)}>

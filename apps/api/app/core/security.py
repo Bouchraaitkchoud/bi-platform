@@ -6,7 +6,11 @@ from passlib.context import CryptContext
 from app.core.config import settings
 
 # Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Support both bcrypt (new) and argon2id (legacy) for backward compatibility
+pwd_context = CryptContext(
+    schemes=["bcrypt", "argon2"], 
+    deprecated="argon2"
+)
 
 # Token expiry times (spec: 24h access, 7d refresh)
 ACCESS_TOKEN_EXPIRE_SECONDS = 24 * 60 * 60  # 24 hours

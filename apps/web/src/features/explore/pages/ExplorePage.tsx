@@ -148,13 +148,13 @@ export const ExplorePage: React.FC<ExplorePageProps> = ({ datasetId }) => {
             </h2>
             <div className="grid gap-2 md:grid-cols-2">
               <Button
-                onClick={() => router.push(`/clean?datasetId=${currentDatasetId}`)}
+                onClick={() => router.push(`/datasets/${currentDatasetId}/clean`)}
                 className="justify-start"
               >
                 Clean Data
               </Button>
               <Button
-                onClick={() => router.push(`/charts?datasetId=${currentDatasetId}`)}
+                onClick={() => router.push(`/charts/new?datasetId=${currentDatasetId}`)}
                 className="justify-start"
               >
                 Create Chart

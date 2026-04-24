@@ -13,6 +13,7 @@ class ChartBase(BaseModel):
 
 class ChartCreate(ChartBase):
     dataset_id: UUID
+    dashboard_id: Optional[UUID] = None
     config: Optional[Dict[str, Any]] = None
 
 
@@ -31,6 +32,7 @@ class ChartResponse(ChartBase):
     id: UUID
     dataset_id: UUID
     user_id: UUID
+    dashboard_id: Optional[UUID] = None
     config: Dict[str, Any]
     created_at: datetime
     updated_at: datetime

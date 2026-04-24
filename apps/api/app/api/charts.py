@@ -90,6 +90,7 @@ async def create_chart(
             id=chart_id,
             dataset_id=chart_data.dataset_id,
             user_id=user_id,
+            dashboard_id=chart_data.dashboard_id,
             name=chart_data.name,
             description=chart_data.description,
             chart_type=chart_type_enum,

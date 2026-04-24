@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Plus, Database, Trash2, Eye, Wand2, Loader2 } from 'lucide-react';
 import { AuthService } from '@/lib/auth';
 import { DatasetService } from '@/lib/services/DatasetService';
+import { WarehouseService } from '@/lib/services/WarehouseService';
 
 interface Dataset {
   id: string;
@@ -18,12 +19,15 @@ interface Dataset {
 
 export default function DatasetsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const warehouseId = searchParams.get('warehouseId');
   const [isLoading, setIsLoading] = useState(true);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [totalRows, setTotalRows] = useState(0);
   const [totalSize, setTotalSize] = useState(0);
+  const [warehouseInfo, setWarehouseInfo] = useState<any>(null);
 
   useEffect(() => {
     if (!AuthService.isAuthenticated()) {
@@ -32,22 +36,50 @@ export default function DatasetsPage() {
     }
     setIsLoading(false);
     fetchDatasets();
-  }, [router]);
+  }, [router, warehouseId]);
 
   const fetchDatasets = async () => {
     setLoading(true);
     try {
-      const data = (await DatasetService.listDatasets(0, 100)) as any[];
-      setDatasets((data || []) as any);
-      
-      let rows = 0;
-      let size = 0;
-      (data || []).forEach((d: any) => {
-        rows += d.row_count || 0;
-        size += (d.file_size || 0) / (1024 * 1024);
-      });
-      setTotalRows(rows);
-      setTotalSize(size);
+      if (warehouseId) {
+        // Fetch warehouse tables
+        const warehouse = await WarehouseService.getWarehouse(warehouseId);
+        setWarehouseInfo(warehouse);
+        
+        // Transform warehouse tables to dataset format
+        const tables = (warehouse.tables || []).map((table: any) => ({
+          id: table.id,
+          name: table.name,
+          file_type: 'WAREHOUSE_TABLE',
+          row_count: table.row_count || 0,
+          column_count: table.column_count || 0,
+          rows: table.row_count || 0,
+          columns: table.column_count || 0,
+          size_mb: (table.file_size || 0) / (1024 * 1024),
+          created_at: table.created_at || new Date().toISOString(),
+        }));
+        
+        setDatasets(tables);
+        let rows = 0;
+        tables.forEach((t: any) => {
+          rows += t.row_count || 0;
+        });
+        setTotalRows(rows);
+        setTotalSize(tables.reduce((sum, t) => sum + t.size_mb, 0));
+      } else {
+        // Fetch regular datasets
+        const data = (await DatasetService.listDatasets(0, 100)) as any[];
+        setDatasets((data || []) as any);
+        
+        let rows = 0;
+        let size = 0;
+        (data || []).forEach((d: any) => {
+          rows += d.row_count || 0;
+          size += (d.file_size || 0) / (1024 * 1024);
+        });
+        setTotalRows(rows);
+        setTotalSize(size);
+      }
       setError('');
     } catch (err) {
       setError('Failed to load datasets');
@@ -90,8 +122,31 @@ export default function DatasetsPage() {
           boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
         }}
       >
-        <h1 style={{ fontSize: '32px', fontWeight: 'bold', margin: '0 0 8px 0' }}>📊 Datasets</h1>
-        <p style={{ fontSize: '16px', opacity: 0.9, margin: 0 }}>Upload and manage your data files</p>
+        <h1 style={{ fontSize: '32px', fontWeight: 'bold', margin: '0 0 8px 0' }}>
+          {warehouseInfo ? '🏭 ' + warehouseInfo.name : '📊 Datasets'}
+        </h1>
+        <p style={{ fontSize: '16px', opacity: 0.9, margin: 0 }}>
+          {warehouseInfo 
+            ? `Data warehouse with ${warehouseInfo.table_count} table(s)`
+            : 'Upload and manage your data files'}
+        </p>
+        {warehouseInfo && (
+          <button
+            onClick={() => router.push('/datasets')}
+            style={{
+              marginTop: '16px',
+              padding: '8px 16px',
+              backgroundColor: 'rgba(255,255,255,0.2)',
+              color: 'white',
+              border: '1px solid rgba(255,255,255,0.4)',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '14px',
+            }}
+          >
+            ← Back to All Datasets
+          </button>
+        )}
       </div>
 
       {/* Main Content */}
@@ -168,6 +223,62 @@ export default function DatasetsPage() {
             <Database size={48} style={{ margin: '0 auto 16px', color: '#d1d5db' }} />
             <p style={{ fontSize: '18px', fontWeight: '600', color: '#374151', margin: 0 }}>No datasets yet</p>
             <p style={{ fontSize: '14px', color: '#6b7280', marginTop: '8px' }}>Upload your first file to get started</p>
+          </div>
+        )}
+
+        {/* Warehouse Relationships Section */}
+        {!loading && warehouseInfo && warehouseInfo.relationships && warehouseInfo.relationships.length > 0 && (
+          <div style={{ backgroundColor: 'white', padding: '24px', borderRadius: '8px', border: '1px solid #e5e7eb', marginBottom: '32px' }}>
+            <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#1f2937', margin: '0 0 16px 0' }}>🔗 Table Relationships</h2>
+            <p style={{ fontSize: '14px', color: '#6b7280', margin: '0 0 16px 0' }}>
+              {warehouseInfo.relationships.length} relationship(s) detected in this warehouse
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '12px' }}>
+              {warehouseInfo.relationships.map((rel: any, idx: number) => (
+                <div
+                  key={idx}
+                  style={{
+                    padding: '12px',
+                    backgroundColor: '#f9fafb',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '6px',
+                  }}
+                >
+                  <p style={{ fontSize: '13px', fontWeight: '600', color: '#1f2937', margin: '0 0 8px 0' }}>
+                    {rel.from_table_name}
+                    <span style={{ color: '#6b7280', fontWeight: '400' }}> ({rel.from_column})</span>
+                  </p>
+                  <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 8px 0', textAlign: 'center' }}>
+                    ↓ {rel.cardinality} {rel.join_type}
+                  </p>
+                  <p style={{ fontSize: '13px', fontWeight: '600', color: '#1f2937', margin: 0 }}>
+                    {rel.to_table_name}
+                    <span style={{ color: '#6b7280', fontWeight: '400' }}> ({rel.to_column})</span>
+                  </p>
+                  {rel.is_auto_detected && (
+                    <p style={{ fontSize: '11px', color: '#059669', marginTop: '8px', margin: '8px 0 0 0' }}>
+                      ✓ Auto-detected ({Math.round(rel.confidence_score)}% confidence)
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() => router.push(`/datasets/${datasets[0]?.id}/model?warehouseId=${warehouseId}`)}
+              style={{
+                marginTop: '16px',
+                padding: '10px 16px',
+                backgroundColor: '#2d8659',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '600',
+              }}
+            >
+              View Relationship Diagram in Data Modeling
+            </button>
           </div>
         )}
 

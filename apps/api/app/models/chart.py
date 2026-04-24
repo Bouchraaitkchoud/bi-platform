@@ -44,14 +44,11 @@ class Chart(BaseModel):
     
     dataset_id = Column(UUID(as_uuid=True), ForeignKey("datasets.id"), nullable=False, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    dashboard_id = Column(UUID(as_uuid=True), ForeignKey("dashboards.id"), nullable=True, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     chart_type = Column(Enum(ChartType, native_enum=False), nullable=False)
     config = Column(JSON, default=dict, nullable=False)  # Stores chart configuration
-    
-    def __repr__(self):
-        return f"<Chart {self.name}>"
-
     
     def __repr__(self):
         return f"<Chart {self.name}>"

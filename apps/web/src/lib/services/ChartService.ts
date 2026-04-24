@@ -4,6 +4,7 @@ export interface Chart {
   id: string;
   dataset_id: string;
   user_id: string;
+  dashboard_id?: string;
   name: string;
   description?: string;
   chart_type: string;
@@ -25,7 +26,8 @@ export class ChartService {
     description: string,
     dataset_id: string,
     chart_type: string,
-    config: Record<string, any>
+    config: Record<string, any>,
+    dashboard_id?: string
   ): Promise<Chart> {
     const response = await fetch(`${ChartService.API_URL}/charts`, {
       method: 'POST',
@@ -39,6 +41,7 @@ export class ChartService {
         dataset_id,
         chart_type,
         config,
+        dashboard_id,
       }),
     });
 

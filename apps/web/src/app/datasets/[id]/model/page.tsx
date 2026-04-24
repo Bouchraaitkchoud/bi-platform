@@ -8,16 +8,19 @@ export const metadata = {
 };
 
 interface ModelRouteProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
+  searchParams?: Promise<{ warehouseId?: string }>;
 }
 
-export default function Page({ params }: ModelRouteProps) {
+export default async function Page({ params, searchParams }: ModelRouteProps) {
+  const { id } = await params;
+  const warehouseId = (await searchParams)?.warehouseId;
   return (
     <div className="h-screen flex flex-col bg-slate-50">
       <Suspense fallback={<div className="flex-1 flex items-center justify-center"><Spinner /></div>}>
-        <ModelPage datasetId={params.id} />
+        <ModelPage datasetId={id} warehouseId={warehouseId} />
       </Suspense>
     </div>
   );

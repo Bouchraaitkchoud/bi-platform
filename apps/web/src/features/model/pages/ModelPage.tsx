@@ -1,21 +1,56 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowRight } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { WarehouseService } from '@/lib/services/WarehouseService';
 
 import { RelationshipDiagram } from '../components/RelationshipDiagram';
 
 interface ModelPageProps {
   datasetId: string;
+  warehouseId?: string;
 }
 
-export function ModelPage({ datasetId }: ModelPageProps) {
+export function ModelPage({ datasetId, warehouseId }: ModelPageProps) {
   const [activeTab, setActiveTab] = useState('relationships');
+  const [warehouseTables, setWarehouseTables] = useState<any[]>([]);
+  const [selectedTable, setSelectedTable] = useState<string>('');
+  const [loadingTables, setLoadingTables] = useState(false);
   const router = useRouter();
+
+  // Load warehouse tables if warehouseId is provided
+  useEffect(() => {
+    if (warehouseId) {
+      const loadTables = async () => {
+        try {
+          setLoadingTables(true);
+          const warehouse = await WarehouseService.getWarehouse(warehouseId);
+          const tables = warehouse.tables || [];
+          setWarehouseTables(tables);
+          if (tables.length > 0) {
+            setSelectedTable(tables[0].name || tables[0].table_name);
+          }
+        } catch (error) {
+          console.error('Failed to load warehouse tables:', error);
+        } finally {
+          setLoadingTables(false);
+        }
+      };
+      loadTables();
+    }
+  }, [warehouseId]);
+
+  const handleCreateChart = () => {
+    if (warehouseId && selectedTable) {
+      router.push(`/charts/new?warehouseId=${warehouseId}&tableName=${selectedTable}`);
+    } else if (datasetId) {
+      router.push(`/charts/new?datasetId=${datasetId}`);
+    }
+  };
 
   return (
     <div className="flex flex-col h-full w-full">
@@ -57,11 +92,25 @@ export function ModelPage({ datasetId }: ModelPageProps) {
             </Button>
           )}
           <div className="h-6 border-l border-gray-300 mx-1"></div>
+          {warehouseId && (
+            <select
+              value={selectedTable}
+              onChange={(e) => setSelectedTable(e.target.value)}
+              disabled={loadingTables}
+              className="px-2 py-1 text-sm border border-gray-300 rounded-md bg-white"
+            >
+              {warehouseTables.map((table) => (
+                <option key={table.id} value={table.name || table.table_name}>
+                  {table.name || table.table_name}
+                </option>
+              ))}
+            </select>
+          )}
           <Button 
             variant="default" 
             size="sm" 
             className="bg-green-600 hover:bg-green-700 flex items-center gap-2"
-            onClick={() => router.push(`/charts/new?datasetId=${datasetId}`)}
+            onClick={handleCreateChart}
           >
             Next: Create Charts
             <ArrowRight size={16} />
@@ -83,7 +132,7 @@ export function ModelPage({ datasetId }: ModelPageProps) {
         {activeTab === 'relationships' && (
           <div className="h-full flex flex-col pt-2 pb-4">
             <div className="flex-1 min-h-0">
-              <RelationshipDiagram />
+              <RelationshipDiagram datasetId={datasetId} warehouseId={warehouseId} />
             </div>
           </div>
         )}
@@ -95,15 +144,10 @@ export function ModelPage({ datasetId }: ModelPageProps) {
                 <h3 className="font-semibold text-gray-700">Fields & Measures</h3>
               </div>
               <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
-                <div className="text-sm font-medium text-gray-500 mb-1">Sales (Fact)</div>
-                <div className="p-2 bg-gray-50 border border-gray-200 rounded text-sm hover:bg-blue-50 cursor-pointer flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    <span className="text-blue-500">∑</span> Total Revenue
-                  </span>
-                  <span className="text-xs text-gray-400 bg-gray-200 px-1.5 rounded">Measure</span>
-                </div>
-                <div className="p-2 border border-transparent hover:bg-gray-50 rounded text-sm cursor-pointer flex items-center">
-                  <span className="text-gray-400 mr-2">#</span> OrderAmount
+                <div className="text-sm font-medium text-gray-500 mb-2">Dataset Fields</div>
+                <div className="text-xs text-gray-400 p-3 bg-gray-50 rounded border border-gray-200">
+                  <p>Fields will be loaded from your imported dataset.</p>
+                  <p className="mt-1">Create measures to build custom calculations from your data columns.</p>
                 </div>
               </div>
             </Card>
@@ -112,7 +156,7 @@ export function ModelPage({ datasetId }: ModelPageProps) {
               <div className="p-4 border-b border-gray-200 bg-blue-50/50">
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Measure Name</label>
-                  <input type="text" defaultValue="Total Revenue" className="p-2 border border-gray-300 rounded font-medium focus:ring-2 focus:ring-blue-500 outline-none w-1/2" />
+                  <input type="text" placeholder="e.g., Total Sales, Average Price" className="p-2 border border-gray-300 rounded font-medium focus:ring-2 focus:ring-blue-500 outline-none w-full" />
                 </div>
               </div>
               <div className="p-4 border-b border-gray-200">
@@ -124,7 +168,6 @@ export function ModelPage({ datasetId }: ModelPageProps) {
                     </div>
                     <textarea 
                       className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded min-h-[100px] font-mono text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none" 
-                      defaultValue="SUM(Sales[OrderAmount])"
                       placeholder="e.g., SUM(Table[Column])"
                     ></textarea>
                   </div>

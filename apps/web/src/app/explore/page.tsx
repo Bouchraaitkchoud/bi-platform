@@ -1,23 +1,29 @@
-import { ExplorePage } from '@/features/explore/pages/ExplorePage';
-import { Suspense } from 'react';
+'use client';
 
-export const metadata = {
-  title: 'Explore Data - BI Platform',
-  description: 'Analyze and explore your dataset',
-};
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 
-interface ExplorePageProps {
-  searchParams: {
-    datasetId?: string;
-  };
-}
+export default function Page() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const datasetId = searchParams.get('datasetId');
 
-export default function Page({ searchParams }: ExplorePageProps) {
+  useEffect(() => {
+    // Redirect from /explore?datasetId=xxx to /datasets/[id]/explore
+    if (datasetId) {
+      router.replace(`/datasets/${datasetId}/explore`);
+    } else {
+      // If no datasetId, go to import page
+      router.replace('/import');
+    }
+  }, [datasetId, router]);
+
   return (
-    <div className="container mx-auto py-12 px-4">
-      <Suspense fallback={<div>Loading...</div>}>
-        <ExplorePage datasetId={searchParams.datasetId} />
-      </Suspense>
+    <div className="container mx-auto py-0 px-0">
+      <div className="flex items-center justify-center h-screen">
+        <p className="text-gray-500">Redirecting...</p>
+      </div>
     </div>
   );
 }

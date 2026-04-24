@@ -36,9 +36,9 @@ export const SidebarNav = () => {
     { label: 'Dashboard', href: '/dashboard', icon: <BarChart3 size={20} /> },
     { label: 'Import Data', href: '/import', icon: <Upload size={20} /> },
     { label: 'Data Info', href: '/data-info', icon: <Eye size={20} /> },
-    { label: 'Data Cleaning', href: '/clean', icon: <Wand2 size={20} /> },
-    { label: 'Data Modeling', href: '/data-modeling', icon: <Zap size={20} /> },
-    { label: 'Chart Builder', href: '/charts/new', icon: <LineChart size={20} /> },
+    { label: 'Data Cleaning', href: '/import', icon: <Wand2 size={20} />, title: 'Go to Import Data to select a dataset' },
+    { label: 'Data Modeling', href: '/import', icon: <Zap size={20} />, title: 'Go to Import Data to select a dataset' },
+    { label: 'Chart Builder', href: '/import', icon: <LineChart size={20} />, title: 'Go to Import Data to select a dataset' },
     { label: 'Dashboards', href: '/dashboards', icon: <Grid3X3 size={20} /> },
     { label: 'Shared With Me', href: '/shared', icon: <Share2 size={20} /> },
   ];
@@ -74,9 +74,9 @@ export const SidebarNav = () => {
 
       {/* Navigation Items */}
       <nav style={{ flex: 1, overflow: 'auto' }}>
-        {navItems.map((item) => (
+        {navItems.map((item, index) => (
           <button
-            key={item.href}
+            key={`nav-item-${index}`}
             onClick={() => router.push(item.href)}
             style={{
               width: '100%',

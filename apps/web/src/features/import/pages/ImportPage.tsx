@@ -94,7 +94,7 @@ export const ImportFeature: React.FC = () => {
                             onClick={(e) => {
                               e.stopPropagation();
                               handleSelectDataset(dataset);
-                              router.push('/explore');
+                              router.push(`/datasets/${dataset.id}/explore`);
                             }}
                           >
                             Explore

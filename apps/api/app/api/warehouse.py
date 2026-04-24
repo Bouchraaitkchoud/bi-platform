@@ -314,3 +314,121 @@ async def delete_warehouse(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid warehouse ID"
         )
+
+
+@router.get("/{warehouse_id}/tables/{table_name}/preview")
+async def get_warehouse_table_preview(
+    warehouse_id: str,
+    table_name: str,
+    limit: int = 1000,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get preview of warehouse table data with columns and row count"""
+    
+    try:
+        from pathlib import Path
+        import os
+        warehouse_uuid = uuid.UUID(warehouse_id)
+        current_user_id = uuid.UUID(current_user["user_id"])
+        
+        # Get warehouse with its tables
+        stmt = select(DataWarehouse).where(
+            (DataWarehouse.id == warehouse_uuid) &
+            (DataWarehouse.user_id == current_user_id)
+        ).options(selectinload(DataWarehouse.tables))
+        
+        result = await db.execute(stmt)
+        warehouse = result.scalar_one_or_none()
+        
+        if not warehouse:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Warehouse not found"
+            )
+        
+        # Find the table by name
+        data_table = None
+        for table in warehouse.tables:
+            if table.name == table_name:
+                data_table = table
+                break
+        
+        if not data_table:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Table '{table_name}' not found in warehouse"
+            )
+        
+        # Resolve file path - try multiple strategies
+        file_path = None
+        original_file = data_table.original_file
+        
+        # Strategy 1: Try as absolute path
+        if Path(original_file).is_absolute():
+            if Path(original_file).exists():
+                file_path = original_file
+        
+        # Strategy 2: Try relative to current working directory
+        if not file_path and Path(original_file).exists():
+            file_path = original_file
+        
+        # Strategy 3: Try in storage/datasets directory
+        if not file_path:
+            storage_path = Path("storage/datasets") / original_file
+            if storage_path.exists():
+                file_path = str(storage_path)
+        
+        # Strategy 4: Try just the filename in storage/datasets
+        if not file_path:
+            filename = Path(original_file).name
+            storage_path = Path("storage/datasets") / filename
+            if storage_path.exists():
+                file_path = str(storage_path)
+        
+        if not file_path:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Data file not found: {original_file}"
+            )
+        
+        # Load data from file
+        try:
+            from app.services.data_operations_service import DataOperationsService
+            df = DataOperationsService.load_dataframe(
+                file_path, 
+                data_table.file_type
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to load table data: {str(e)}"
+            )
+        
+        # Limit rows
+        df_preview = df.head(limit)
+        
+        # Format response - convert to dict format for JSON serialization
+        data_rows = []
+        for _, row in df_preview.iterrows():
+            data_rows.append(row.to_dict())
+        
+        return {
+            "columns": df.columns.tolist(),
+            "data": data_rows,
+            "row_count": len(df),
+            "column_count": len(df.columns)
+        }
+        
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid warehouse ID"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving table preview: {str(e)}"
+        )

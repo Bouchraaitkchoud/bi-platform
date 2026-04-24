@@ -6,6 +6,15 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { BarChart3, LineChart, PieChart, AreaChart, Save, AlertCircle } from 'lucide-react';
 import { DatasetService } from '@/lib/services/DatasetService';
+import { WarehouseService } from '@/lib/services/WarehouseService';
+import { ChartService } from '@/lib/services/ChartService';
+import { ChartRenderer } from './ChartRenderer';
+
+interface ReportBuilderFixedProps {
+  datasetId?: string | null;
+  warehouseId?: string | null;
+  tableName?: string | null;
+}
 
 const CHART_TYPES = [
   { id: 'bar', name: 'Bar Chart', icon: BarChart3 },
@@ -14,15 +23,15 @@ const CHART_TYPES = [
   { id: 'area', name: 'Area Chart', icon: AreaChart },
 ];
 
-export function ReportBuilderFixed() {
+export function ReportBuilderFixed({ datasetId, warehouseId, tableName }: ReportBuilderFixedProps) {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const datasetId = searchParams.get('datasetId');
 
   const [columns, setColumns] = useState<string[]>([]);
+  const [datasetData, setDatasetData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [chartName, setChartName] = useState('Untitled Chart');
+  const [chartDescription, setChartDescription] = useState('');
   const [chartType, setChartType] = useState('bar');
   const [selectedDimension, setSelectedDimension] = useState<string>('');
   const [selectedMeasure, setSelectedMeasure] = useState<string>('');
@@ -30,33 +39,43 @@ export function ReportBuilderFixed() {
 
   useEffect(() => {
     const loadColumns = async () => {
-      if (!datasetId) {
-        setError('No dataset selected');
+      if (!datasetId && (!warehouseId || !tableName)) {
+        setError('No dataset or warehouse table selected');
         setLoading(false);
         return;
       }
 
       try {
         setLoading(true);
-        const preview = await DatasetService.getDatasetPreview(datasetId, 1);
+        let preview;
+
+        if (warehouseId && tableName) {
+          // Load warehouse table preview
+          preview = await WarehouseService.getTablePreview(warehouseId, tableName, 1000);
+        } else if (datasetId) {
+          // Load dataset preview
+          preview = await DatasetService.getDatasetPreview(datasetId, 1000);
+        }
+
         if (preview && preview.data && preview.data.length > 0) {
           const cols = Object.keys(preview.data[0]);
           setColumns(cols);
+          setDatasetData(preview.data);
           // Auto-select first two columns
           if (cols.length > 0) setSelectedDimension(cols[0]);
           if (cols.length > 1) setSelectedMeasure(cols[1]);
         } else {
-          setError('Unable to load dataset columns');
+          setError('Unable to load data columns');
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load dataset');
+        setError(err instanceof Error ? err.message : 'Failed to load data');
       } finally {
         setLoading(false);
       }
     };
 
     loadColumns();
-  }, [datasetId]);
+  }, [datasetId, warehouseId, tableName]);
 
   const handleSaveChart = async () => {
     if (!selectedDimension || !selectedMeasure) {
@@ -64,15 +83,51 @@ export function ReportBuilderFixed() {
       return;
     }
 
+    if (!chartName.trim()) {
+      setError('Chart name is required');
+      return;
+    }
+
     setSaving(true);
     try {
-      // In a real implementation, save the chart to backend
-      console.log('Saving chart:', { chartName, chartType, datasetId, selectedDimension, selectedMeasure });
+      // Prepare the chart config (echarts format)
+      const chartConfig = {
+        tooltip: { trigger: 'axis' },
+        xAxis: { 
+          type: 'category', 
+          data: datasetData.length > 0 
+            ? datasetData.map(d => String(d[selectedDimension])).slice(0, 50)
+            : []
+        },
+        yAxis: { type: 'value' },
+        series: [{
+          name: selectedMeasure,
+          data: datasetData.length > 0 
+            ? datasetData.map(d => {
+                const val = d[selectedMeasure];
+                return typeof val === 'number' ? val : parseFloat(val) || 0;
+              }).slice(0, 50)
+            : [],
+          type: chartType,
+          smooth: chartType === 'line',
+        }],
+      };
+
+      // Create the chart
+      const chart = await ChartService.createChart(
+        chartName,
+        chartDescription,
+        datasetId || '',
+        chartType.toUpperCase(),
+        chartConfig
+      );
+
       setError(null);
-      // Redirect after a short delay
-      setTimeout(() => router.push('/dashboards/new'), 1000);
+      // Redirect to charts page to see the newly created chart
+      setTimeout(() => router.push('/charts'), 1000);
     } catch (err) {
-      setError('Failed to save chart');
+      setError(err instanceof Error ? err.message : 'Failed to save chart');
+      console.error('Error saving chart:', err);
     } finally {
       setSaving(false);
     }
@@ -89,16 +144,22 @@ export function ReportBuilderFixed() {
     );
   }
 
-  if (!datasetId) {
+  if (error || columns.length === 0) {
     return (
       <div className="h-screen w-full flex items-center justify-center bg-gray-50">
         <div className="text-center max-w-md">
           <AlertCircle size={48} className="mx-auto text-red-500 mb-4" />
-          <h2 className="text-2xl font-bold text-gray-800 mb-2">No Dataset Selected</h2>
-          <p className="text-gray-600 mb-4">Please select a dataset before creating a chart</p>
-          <Button onClick={() => router.push('/datasets')} className="bg-blue-600 hover:bg-blue-700">
-            Go to Datasets
-          </Button>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">Unable to Load Dataset</h2>
+          <p className="text-gray-600 mb-2">{error}</p>
+          <p className="text-sm text-gray-500 mb-4">Please ensure the dataset has data and try again. You can also go back and select a different dataset.</p>
+          <div className="flex gap-2 justify-center">
+            <Button variant="outline" onClick={() => router.push('/datasets')}>
+              Go to Datasets
+            </Button>
+            <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => window.location.reload()}>
+              Retry
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -108,11 +169,18 @@ export function ReportBuilderFixed() {
     <div className="h-screen w-full bg-gray-50 flex flex-col">
       {/* Top Bar */}
       <div className="bg-white border-b border-gray-200 shadow-sm px-6 py-4 flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col gap-2">
           <input
             value={chartName}
             onChange={(e) => setChartName(e.target.value)}
+            placeholder="Chart name..."
             className="text-xl font-semibold bg-transparent border-b-2 border-transparent hover:border-gray-300 focus:border-blue-500 outline-none px-2 py-1 transition-colors"
+          />
+          <input
+            value={chartDescription}
+            onChange={(e) => setChartDescription(e.target.value)}
+            placeholder="Chart description (optional)..."
+            className="text-sm text-gray-600 bg-transparent border-b-2 border-transparent hover:border-gray-300 focus:border-blue-500 outline-none px-2 py-1 transition-colors"
           />
         </div>
         <div className="flex items-center gap-3">
@@ -238,23 +306,20 @@ export function ReportBuilderFixed() {
             <h2 className="font-semibold text-gray-800">Preview</h2>
           </div>
 
-          <div className="flex-1 p-6 flex items-center justify-center">
-            {selectedDimension && selectedMeasure ? (
-              <div className="text-center">
-                <div className="text-6xl font-bold text-blue-600 mb-4">📊</div>
-                <h3 className="text-xl font-semibold text-gray-800 mb-2">
-                  {selectedMeasure} by {selectedDimension}
-                </h3>
-                <p className="text-gray-600 mb-4">
-                  Chart Type: <span className="font-medium">{CHART_TYPES.find(t => t.id === chartType)?.name}</span>
-                </p>
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
-                  Chart will be generated when you save
-                </div>
-              </div>
+          <div className="flex-1 overflow-hidden p-6">
+            {selectedDimension && selectedMeasure && datasetData.length > 0 ? (
+              <ChartRenderer
+                data={datasetData}
+                chartType={chartType as 'bar' | 'line' | 'pie' | 'area'}
+                dimensionColumn={selectedDimension}
+                measureColumn={selectedMeasure}
+                title={`${selectedMeasure} by ${selectedDimension}`}
+              />
             ) : (
-              <div className="text-center text-gray-500">
-                <p className="mb-2">Select both a Dimension and Measure to see preview</p>
+              <div className="w-full h-full flex items-center justify-center">
+                <div className="text-center text-gray-500">
+                  <p className="mb-2">Select both a Dimension and Measure to see preview</p>
+                </div>
               </div>
             )}
           </div>
