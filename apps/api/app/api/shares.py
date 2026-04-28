@@ -86,6 +86,7 @@ async def create_share(
             can_view=share_data.permissions.can_view,
             can_comment=share_data.permissions.can_comment,
             can_edit=share_data.permissions.can_edit,
+            message=share_data.message,
             expires_at=getattr(share_data, 'expires_at', None)
         )
         

@@ -80,18 +80,34 @@ async def login(
     db: AsyncSession = Depends(get_db)
 ):
     """Login user and return access token"""
+    print(f"\n[AUTH DEBUG] Attempting login for email: {credentials.email}")
     
     stmt = select(User).where(User.email == credentials.email)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     
-    if not user or not verify_password(credentials.password, user.password_hash):
+    if not user:
+        print(f"[AUTH DEBUG] User not found for email: {credentials.email}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials"
+        )
+    
+    print(f"[AUTH DEBUG] User found: {user.email}, is_active: {user.is_active}")
+    print(f"[AUTH DEBUG] Stored hash: {user.password_hash[:60]}...")
+
+    password_verified = verify_password(credentials.password, user.password_hash)
+    
+    print(f"[AUTH DEBUG] Password verification result: {password_verified}")
+
+    if not password_verified:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials"
         )
     
     if not user.is_active:
+        print(f"[AUTH DEBUG] User account inactive: {user.email}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is inactive"

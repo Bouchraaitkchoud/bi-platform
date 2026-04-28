@@ -53,12 +53,12 @@ export default function DashboardPage() {
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
           <Card className="p-6 hover:shadow-lg transition-shadow cursor-pointer">
-            <Link href="/import">
+            <Link href="/datasets/new">
               <div className="text-center">
                 <div className="text-4xl mb-2">📤</div>
                 <h3 className="font-semibold text-gray-900">Import Data</h3>
                 <p className="text-sm text-gray-500 mt-2">
-                  Upload CSV, Excel, or JSON files
+                  Upload files or connect to a database
                 </p>
               </div>
             </Link>

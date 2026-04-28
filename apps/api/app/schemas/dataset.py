@@ -1,8 +1,9 @@
 # apps/api/app/schemas/dataset.py
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, Dict, Any
 from datetime import datetime
 from uuid import UUID
+from app.models.dataset import SourceType, FileType
 
 
 class DatasetBase(BaseModel):
@@ -11,19 +12,47 @@ class DatasetBase(BaseModel):
 
 
 class DatasetCreate(DatasetBase):
-    file_type: str
+    source_type: SourceType
+    
+    # File-based
+    file_type: Optional[FileType] = None
+    
+    # DB-based
+    db_connection_details: Optional[Dict[str, Any]] = None
+    sql_query: Optional[str] = None
+
+    @field_validator('file_type')
+    def check_file_source(cls, v, info):
+        if info.data.get('source_type') == SourceType.FILE and not v:
+            raise ValueError('file_type is required for FILE source_type')
+        return v
+
+    @field_validator('db_connection_details', 'sql_query')
+    def check_db_source(cls, v, info):
+        if info.data.get('source_type') == SourceType.DATABASE and not v:
+            raise ValueError(f'{info.field_name} is required for DATABASE source_type')
+        return v
 
 
 class DatasetUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    # You might want to add other updatable fields here, e.g., for the query
+    sql_query: Optional[str] = None
 
 
 class DatasetResponse(DatasetBase):
     id: UUID
     user_id: UUID
-    original_file: str
-    file_type: str
+    source_type: SourceType
+    
+    # File-based
+    original_file: Optional[str] = None
+    file_type: Optional[FileType] = None
+    
+    # DB-based
+    sql_query: Optional[str] = None
+    
     row_count: int
     column_count: int
     columns_metadata: Dict[str, Any]
@@ -41,3 +70,15 @@ class DatasetPreview(BaseModel):
     data: list
     row_count: int
     column_count: int
+
+
+class DatabaseConnectionTest(BaseModel):
+    """Test database connection request"""
+    db_connection_details: Dict[str, Any]
+    sql_query: str
+
+
+class DatabaseConnectionTestResponse(BaseModel):
+    """Test database connection response"""
+    message: str
+    preview_data: Dict[str, Any]

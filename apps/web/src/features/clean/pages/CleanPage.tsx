@@ -6,15 +6,17 @@ import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
 import { useDatasetStore } from '@/stores/datasetStore';
 import { DatasetService } from '@/lib/services/DatasetService';
+import { WarehouseService } from '@/lib/services/WarehouseService';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/Spinner';
 import { Settings2, X, Plus, Filter, Type, Trash2, SplitSquareHorizontal, Combine, Undo2, ChevronDown, ChevronUp, Download } from 'lucide-react';
 
 interface CleanPageProps {
   datasetId?: string;
+  warehouseId?: string;
 }
 
-export const CleanPage: React.FC<CleanPageProps> = ({ datasetId }) => {
+export const CleanPage: React.FC<CleanPageProps> = ({ datasetId, warehouseId }) => {
   const router = useRouter();
   const { isAuthenticated } = useAuthStore();
   const activeDataset = useDatasetStore((state) => state.activeDataset);
@@ -52,11 +54,75 @@ export const CleanPage: React.FC<CleanPageProps> = ({ datasetId }) => {
       try {
         setLoading(true);
         setError(null);
-        const preview = await DatasetService.getDatasetPreview(currentDatasetId, 50);
-        if (preview && preview.data && preview.data.length > 0) {
-          setRowData(preview.data);
-          const cols = Object.keys(preview.data[0]);
+        
+        let previewData: any;
+        let actualTableId = currentDatasetId;
+        
+        // If this is a warehouse, we may need to select the first table
+        if (warehouseId && warehouseId === currentDatasetId) {
+          try {
+            // Get warehouse to find the first table
+            const warehouse = await WarehouseService.getWarehouse(warehouseId);
+            const tables = warehouse.tables || [];
+            
+            if (tables.length === 0) {
+              throw new Error('No tables found in warehouse');
+            }
+            
+            // Use first table
+            const firstTable = tables[0];
+            actualTableId = firstTable.id;
+            
+            // Get table preview from warehouse endpoint
+            const response = await fetch(
+              `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/warehouses/${warehouseId}/tables/${firstTable.name}/preview`,
+              { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } }
+            );
+            
+            if (!response.ok) throw new Error('Failed to fetch warehouse table preview');
+            previewData = await response.json();
+          } catch (warehouseErr) {
+            console.warn('Warehouse table loading failed:', warehouseErr);
+            setError('Failed to load warehouse table data');
+            setLoading(false);
+            return;
+          }
+        } else if (warehouseId) {
+          // warehouseId is provided but datasetId is different - it's a specific table
+          try {
+            const warehouse = await WarehouseService.getWarehouse(warehouseId);
+            const table = warehouse.tables?.find((t: any) => t.id === currentDatasetId);
+            
+            if (!table) {
+              throw new Error('Table not found in warehouse');
+            }
+            
+            // Get table preview from warehouse endpoint
+            const response = await fetch(
+              `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/warehouses/${warehouseId}/tables/${table.name}/preview`,
+              { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } }
+            );
+            
+            if (!response.ok) throw new Error('Failed to fetch warehouse table preview');
+            previewData = await response.json();
+          } catch (warehouseErr) {
+            console.warn('Warehouse preview failed, attempting dataset preview:', warehouseErr);
+            // Fall back to regular dataset preview
+            previewData = await DatasetService.getDatasetPreview(currentDatasetId, 50);
+          }
+        } else {
+          // Regular dataset preview
+          previewData = await DatasetService.getDatasetPreview(currentDatasetId, 50);
+        }
+        
+        if (previewData && previewData.data && previewData.data.length > 0) {
+          setRowData(previewData.data);
+          const cols = Object.keys(previewData.data[0]);
           setColumns(cols);
+        } else if (previewData && previewData.columns) {
+          // Handle warehouse preview format which returns { columns, data, row_count }
+          setRowData(previewData.data || []);
+          setColumns(previewData.columns || []);
         } else {
           console.warn('No preview data available');
           setError('No data available in this dataset');
@@ -71,7 +137,7 @@ export const CleanPage: React.FC<CleanPageProps> = ({ datasetId }) => {
     };
     
     loadPreview();
-  }, [currentDatasetId]);
+  }, [currentDatasetId, warehouseId]);
 
   // Transformation functions
   const dropNulls = () => {

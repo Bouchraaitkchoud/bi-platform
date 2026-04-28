@@ -118,8 +118,9 @@ async def create_chart(
 
 @router.get("", response_model=list[ChartResponse])
 async def list_charts(
+    dashboard_id: Optional[str] = None,
     skip: int = 0,
-    limit: int = 10,
+    limit: int = 100,
     current_user: dict = Depends(get_current_user_from_token),
     db: AsyncSession = Depends(get_db)
 ):
@@ -129,8 +130,16 @@ async def list_charts(
         user_id = uuid.UUID(current_user["user_id"])
         print(f"[DEBUG] Fetching charts for user: {user_id}")
         
+        conditions = [Chart.user_id == user_id]
+        if dashboard_id:
+            try:
+                dash_uuid = uuid.UUID(dashboard_id)
+                conditions.append(Chart.dashboard_id == dash_uuid)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid dashboard_id")
+
         stmt = select(Chart).where(
-            Chart.user_id == user_id
+            *conditions
         ).offset(skip).limit(limit)
         
         result = await db.execute(stmt)

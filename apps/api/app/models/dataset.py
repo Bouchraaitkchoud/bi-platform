@@ -11,6 +11,13 @@ class FileType(str, enum.Enum):
     XLSX = "XLSX"
     XLS = "XLS"
     JSON = "JSON"
+    DATABASE = "DATABASE"
+
+
+class SourceType(str, enum.Enum):
+    FILE = "FILE"
+    WAREHOUSE = "WAREHOUSE"
+    DATABASE = "DATABASE"
 
 
 class DatasetStatus(str, enum.Enum):
@@ -26,8 +33,18 @@ class Dataset(BaseModel):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
-    original_file = Column(String(500), nullable=False)
-    file_type = Column(Enum(FileType), nullable=False)
+    
+    # Source type
+    source_type = Column(Enum(SourceType, native_enum=False), nullable=False, default=SourceType.FILE)
+    
+    # File-based source fields
+    original_file = Column(String(500), nullable=True)
+    file_type = Column(Enum(FileType, native_enum=False), nullable=True)
+    
+    # Database source fields
+    db_connection_details = Column(JSON, nullable=True) # Encrypted connection details
+    sql_query = Column(Text, nullable=True)
+
     status = Column(Enum(DatasetStatus, native_enum=False), nullable=False, default=DatasetStatus.UPLOADED)
     row_count = Column(Integer, default=0)
     column_count = Column(Integer, default=0)

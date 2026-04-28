@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import {
   BarChart3,
   Upload,
@@ -23,25 +23,68 @@ interface NavItem {
   href: string;
   icon: React.ReactNode;
   badge?: string;
+  title?: string;
 }
 
 export const SidebarNav = () => {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   const user = AuthService.getUser();
+  const warehouseId = searchParams.get('warehouseId');
+  const datasetId = searchParams.get('datasetId');
 
-  const navItems: NavItem[] = [
-    { label: 'Dashboard', href: '/dashboard', icon: <BarChart3 size={20} /> },
-    { label: 'Import Data', href: '/import', icon: <Upload size={20} /> },
-    { label: 'Data Info', href: '/data-info', icon: <Eye size={20} /> },
-    { label: 'Data Cleaning', href: '/import', icon: <Wand2 size={20} />, title: 'Go to Import Data to select a dataset' },
-    { label: 'Data Modeling', href: '/import', icon: <Zap size={20} />, title: 'Go to Import Data to select a dataset' },
-    { label: 'Chart Builder', href: '/import', icon: <LineChart size={20} />, title: 'Go to Import Data to select a dataset' },
-    { label: 'Dashboards', href: '/dashboards', icon: <Grid3X3 size={20} /> },
-    { label: 'Shared With Me', href: '/shared', icon: <Share2 size={20} /> },
-  ];
+  // Determine the current context (warehouse or dataset)
+  const currentId = warehouseId || datasetId;
+  const isWarehouse = !!warehouseId;
+
+  // Build navigation items dynamically based on context
+  const getNavItems = (): NavItem[] => {
+    const baseItems: NavItem[] = [
+      { label: 'Dashboard', href: '/dashboard', icon: <BarChart3 size={20} /> },
+      { label: 'Import Data', href: '/datasets/new', icon: <Upload size={20} /> },
+      { label: 'Data Info', href: '/data-info', icon: <Eye size={20} /> },
+    ];
+
+    // Data operations - conditionally enabled based on warehouse/dataset selection
+    let cleaningHref = '/import';
+    let modelingHref = '/import';
+    let chartsHref = '/charts';
+    let cleaningTitle = 'Select a dataset to clean';
+    let modelingTitle = 'Select a dataset to model';
+    let chartsTitle = 'Select a dataset to create charts';
+
+    if (currentId) {
+      if (isWarehouse) {
+        cleaningHref = `/datasets/${warehouseId}/clean?warehouseId=${warehouseId}`;
+        modelingHref = `/datasets/${warehouseId}/model?warehouseId=${warehouseId}`;
+        chartsHref = `/charts/new?warehouseId=${warehouseId}`;
+        cleaningTitle = 'Clean warehouse tables';
+        modelingTitle = 'Model warehouse relationships';
+        chartsTitle = 'Create charts from warehouse';
+      } else {
+        cleaningHref = `/datasets/${datasetId}/clean`;
+        modelingHref = `/datasets/${datasetId}/model`;
+        chartsHref = `/charts/new?datasetId=${datasetId}`;
+        cleaningTitle = 'Clean this dataset';
+        modelingTitle = 'Model this dataset';
+        chartsTitle = 'Create charts from this dataset';
+      }
+    }
+
+    return [
+      ...baseItems,
+      { label: 'Data Cleaning', href: cleaningHref, icon: <Wand2 size={20} />, title: cleaningTitle },
+      { label: 'Data Modeling', href: modelingHref, icon: <Zap size={20} />, title: modelingTitle },
+      { label: 'Chart Builder', href: chartsHref, icon: <LineChart size={20} />, title: chartsTitle },
+      { label: 'Dashboards', href: '/dashboards', icon: <Grid3X3 size={20} /> },
+      { label: 'Shared With Me', href: '/shared', icon: <Share2 size={20} /> },
+    ];
+  };
+
+  const navItems = getNavItems();
 
   const handleLogout = () => {
     AuthService.logout();
@@ -77,6 +120,7 @@ export const SidebarNav = () => {
         {navItems.map((item, index) => (
           <button
             key={`nav-item-${index}`}
+            title={item.title || item.label}
             onClick={() => router.push(item.href)}
             style={{
               width: '100%',

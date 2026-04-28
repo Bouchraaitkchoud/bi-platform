@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Plus, BarChart3, Trash2, Edit, Loader2, Search, X, Calendar, Clock, FileText } from 'lucide-react';
 import { AuthService } from '@/lib/auth';
 import { ChartService, Chart } from '@/lib/services/ChartService';
+import { ChartPreview } from '@/features/reports/components/ChartPreview';
 
 export default function ChartsPage() {
   const router = useRouter();
@@ -394,8 +395,6 @@ export default function ChartsPage() {
                 <div
                   style={{
                     backgroundColor: '#f3f4f6',
-                    padding: '48px 24px',
-                    textAlign: 'center',
                     borderBottom: '1px solid #e5e7eb',
                     minHeight: '180px',
                     display: 'flex',
@@ -403,7 +402,11 @@ export default function ChartsPage() {
                     justifyContent: 'center',
                   }}
                 >
-                  <BarChart3 size={64} style={{ color: '#d1d5db' }} />
+                  <ChartPreview 
+                    config={chart.config} 
+                    chartType={chart.chart_type || 'bar'}
+                    height={180}
+                  />
                 </div>
 
                 {/* Content */}

@@ -324,7 +324,9 @@ export default function DatasetsPage() {
                         <Eye size={18} />
                       </button>
                       <button
-                        onClick={() => router.push(`/clean?datasetId=${dataset.id}`)}
+                        onClick={() => router.push(warehouseId 
+                          ? `/datasets/${dataset.id}/clean?warehouseId=${warehouseId}`
+                          : `/datasets/${dataset.id}/clean`)}
                         title="Clean"
                         style={{
                           backgroundColor: 'transparent',

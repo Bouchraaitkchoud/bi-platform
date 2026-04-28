@@ -6,9 +6,12 @@ export interface Share {
   owner_id: string;
   shared_with_user_id?: string;
   shared_with_email?: string;
-  can_view: boolean;
-  can_comment: boolean;
-  can_edit: boolean;
+  permissions: {
+    can_view: boolean;
+    can_comment: boolean;
+    can_edit: boolean;
+  };
+  message?: string;
   expires_at?: string;
   created_at: string;
 }
@@ -18,10 +21,14 @@ export interface SharedDashboard {
   name: string;
   description?: string;
   owner_email: string;
-  shared_by: string;
-  can_view: boolean;
-  can_edit: boolean;
+  permissions: {
+    can_view: boolean;
+    can_comment: boolean;
+    can_edit: boolean;
+  };
+  message?: string;
   shared_at: string;
+  chart_count: number;
 }
 
 export class ShareService {
@@ -34,8 +41,9 @@ export class ShareService {
       can_view?: boolean;
       can_comment?: boolean;
       can_edit?: boolean;
-    }
-  ): Promise<Share> {
+    },
+    message?: string
+  ): Promise<any> {
     const response = await fetch(`${ShareService.API_URL}/shares`, {
       method: 'POST',
       headers: {
@@ -45,7 +53,12 @@ export class ShareService {
       body: JSON.stringify({
         dashboard_id: dashboardId,
         shared_with_email: email,
-        ...permissions,
+        permissions: {
+          can_view: permissions.can_view ?? true,
+          can_comment: permissions.can_comment ?? false,
+          can_edit: permissions.can_edit ?? false,
+        },
+        message: message || null,
       }),
     });
 
@@ -58,7 +71,7 @@ export class ShareService {
   }
 
   static async listSharedDashboards(): Promise<SharedDashboard[]> {
-    const response = await fetch(`${ShareService.API_URL}/shares`, {
+    const response = await fetch(`${ShareService.API_URL}/shares?shared_with_me=true`, {
       headers: AuthService.getAuthHeader(),
     });
 
@@ -69,25 +82,13 @@ export class ShareService {
     return response.json();
   }
 
-  static async updateShare(
-    shareId: string,
-    permissions: {
-      can_view?: boolean;
-      can_comment?: boolean;
-      can_edit?: boolean;
-    }
-  ): Promise<Share> {
-    const response = await fetch(`${ShareService.API_URL}/shares/${shareId}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        ...AuthService.getAuthHeader(),
-      },
-      body: JSON.stringify(permissions),
+  static async listDashboardShares(dashboardId: string): Promise<any[]> {
+    const response = await fetch(`${ShareService.API_URL}/shares?dashboard_id=${dashboardId}`, {
+      headers: AuthService.getAuthHeader(),
     });
 
     if (!response.ok) {
-      throw new Error('Failed to update share permissions');
+      throw new Error('Failed to fetch dashboard shares');
     }
 
     return response.json();
@@ -102,17 +103,5 @@ export class ShareService {
     if (!response.ok) {
       throw new Error('Failed to revoke share');
     }
-  }
-
-  static async listDashboardShares(dashboardId: string): Promise<Share[]> {
-    const response = await fetch(`${ShareService.API_URL}/dashboards/${dashboardId}/shares`, {
-      headers: AuthService.getAuthHeader(),
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch dashboard shares');
-    }
-
-    return response.json();
   }
 }

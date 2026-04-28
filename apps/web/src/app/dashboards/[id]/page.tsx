@@ -7,6 +7,8 @@ import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import ReactECharts from 'echarts-for-react';
 import { ChartService, Chart } from '@/lib/services/ChartService';
+import { AddChartModal } from '@/features/dashboards/components/AddChartModal';
+import { ShareModal } from '@/features/dashboards/components/ShareModal';
 
 let GridLayoutComponent: any = null;
 
@@ -35,7 +37,11 @@ export default function DashboardPage() {
   const [editMode, setEditMode] = useState(false);
   const [dashboardName, setDashboardName] = useState('My Dashboard');
   const [charts, setCharts] = useState<Chart[]>([]);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState<number>(1200);
   const [layouts, setLayouts] = useState<any>({
     lg: []
   });
@@ -46,13 +52,24 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      if (entries[0]) {
+        setContainerWidth(entries[0].contentRect.width);
+      }
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [isMounted, isLoading]);
+
+  useEffect(() => {
     if (!isMounted) return;
     
     const loadCharts = async () => {
       try {
         setIsLoading(true);
-        // Fetch all charts (no filter, get all user's charts)
-        const allCharts = await ChartService.listCharts(0, 100);
+        // Fetch charts only for this dashboard
+        const allCharts = await ChartService.listCharts(0, 100, undefined, dashboardId);
         setCharts(allCharts);
         
         // Generate default layouts for charts
@@ -78,7 +95,6 @@ export default function DashboardPage() {
     loadCharts();
   }, [isMounted]);
 
-
   const onLayoutChange = (layout: any, allLayouts: any) => {
     setLayouts(allLayouts);
   };
@@ -95,9 +111,11 @@ export default function DashboardPage() {
 
     return (
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-full">
-        <div className="px-4 py-3 border-b border-gray-100">
-          <h3 className="font-semibold text-gray-700">{chart.name}</h3>
-          {chart.description && <p className="text-xs text-gray-500 mt-1">{chart.description}</p>}
+        <div className="px-4 py-3 border-b border-gray-100 flex justify-between items-start">
+          <div className="flex-1">
+            <h3 className="font-semibold text-gray-700">{chart.name}</h3>
+            {chart.description && <p className="text-xs text-gray-500 mt-1">{chart.description}</p>}
+          </div>
         </div>
         <div className="flex-1 p-2 overflow-hidden">
           <ReactECharts 
@@ -112,6 +130,7 @@ export default function DashboardPage() {
   };
 
   return (
+    <>
     <div className="min-h-screen bg-[#f1f5f9] flex flex-col font-sans">
       {/* Dashboard Top Ribbon */}
       <div className="bg-white border-b border-gray-200 px-6 py-3 shadow-sm flex justify-between items-center z-10 sticky top-0">
@@ -143,15 +162,21 @@ export default function DashboardPage() {
           ) : (
             <>
               <button 
-                onClick={() => router.push('/charts')}
+                onClick={() => setIsAddModalOpen(true)}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium flex items-center gap-2 shadow-sm transition-colors"
+              >
+                <Plus size={16} /> Add Chart
+              </button>
+              <button 
+                onClick={() => router.push('/charts')}
+                className="px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-md font-medium flex items-center gap-2 shadow-sm transition-colors"
               >
                 👁️ See Created Charts
               </button>
               <button onClick={() => setEditMode(true)} className="px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-md font-medium flex items-center gap-2 shadow-sm transition-colors">
                 <Edit2 size={16} /> Edit Dashboard
               </button>
-              <button className="px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-md font-medium flex items-center gap-2 shadow-sm transition-colors">
+              <button onClick={() => setIsShareModalOpen(true)} className="px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-md font-medium flex items-center gap-2 shadow-sm transition-colors">
                 <Share2 size={16} /> Share
               </button>
             </>
@@ -160,7 +185,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Grid Canvas */}
-      <div className="flex-1 p-6 overflow-auto flex flex-col">
+      <div className="flex-1 p-6 overflow-auto" ref={containerRef}>
         {error && (
           <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
             <AlertCircle size={20} className="text-red-600" />
@@ -181,39 +206,38 @@ export default function DashboardPage() {
               <Plus size={32} className="text-gray-300 mb-2 mx-auto" />
               <p className="text-gray-600 mb-4">No charts yet. Create your first chart to get started!</p>
               <button 
-                onClick={() => router.push('/charts/new')}
+                onClick={() => setIsAddModalOpen(true)}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium flex items-center gap-2 mx-auto"
               >
-                <Plus size={16} /> Create Chart
+                <Plus size={16} /> Add Chart
               </button>
             </div>
           </div>
         ) : (
           isMounted && GridLayoutComponent ? (
-          <div className="w-full h-full overflow-auto">
-            <div style={{ minWidth: 'min-content', width: 'fit-content' }}>
-              <GridLayoutComponent
-                className="layout"
-                layouts={layouts}
-                breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
-                cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
-                rowHeight={60}
-                onLayoutChange={onLayoutChange}
-                isDraggable={editMode}
-                isResizable={editMode}
-                margin={[16, 16]}
-                compactType="vertical"
-              >
-                {charts.map((chart) => (
-                  <div key={chart.id} className="min-h-0">
-                    {renderChartWidget(chart)}
-                  </div>
-                ))}
-              </GridLayoutComponent>
-            </div>
-          </div>
+          <GridLayoutComponent
+            width={containerWidth}
+            className="layout w-full"
+            layouts={layouts}
+            breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
+            cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
+            rowHeight={60}
+            onLayoutChange={onLayoutChange}
+            isDraggable={editMode}
+            isResizable={editMode}
+            resizeHandles={['se', 'e', 's']}
+            margin={[16, 16]}
+            compactType="vertical"
+            draggableCancel="button"
+          >
+            {charts.map((chart) => (
+              <div key={chart.id} className="min-h-0">
+                {renderChartWidget(chart)}
+              </div>
+            ))}
+          </GridLayoutComponent>
           ) : (
-            <div className="w-full h-full flex items-center justify-center bg-gray-50 rounded border border-gray-200">
+            <div className="w-full flex items-center justify-center bg-gray-50 rounded border border-gray-200 py-12">
               <p className="text-gray-500">Loading dashboard layout...</p>
             </div>
           )
@@ -221,5 +245,38 @@ export default function DashboardPage() {
       </div>
 
     </div>
+
+    {isAddModalOpen && (
+      <AddChartModal 
+        dashboardId={dashboardId}
+        onClose={() => setIsAddModalOpen(false)}
+        onSuccess={(newChart) => {
+          setIsAddModalOpen(false);
+          setCharts(prev => [...prev, newChart]);
+          setLayouts((prev: any) => ({
+            ...prev,
+            lg: [
+              ...(prev.lg || []),
+              {
+                i: newChart.id,
+                x: (charts.length % 2) * 6,
+                y: Math.floor(charts.length / 2) * 6,
+                w: 6,
+                h: 6
+              }
+            ]
+          }));
+        }}
+      />
+    )}
+
+    {isShareModalOpen && (
+      <ShareModal
+        dashboardId={dashboardId}
+        dashboardName={dashboardName}
+        onClose={() => setIsShareModalOpen(false)}
+      />
+    )}
+    </>
   );
 }

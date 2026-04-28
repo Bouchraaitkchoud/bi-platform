@@ -4,6 +4,9 @@ import numpy as np
 from typing import Dict, Any
 import asyncio
 import uuid
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.exc import SQLAlchemyError
+from typing import Dict, Any, Tuple, List
 
 
 def _extract_metadata_sync(file_path: str, file_type_lower: str) -> Dict[str, Any]:
@@ -81,3 +84,74 @@ async def get_dataset_preview(file_path: str, file_type: str, limit: int = 10000
         return await asyncio.to_thread(_get_preview_sync, file_path, file_type_lower, limit)
     except Exception as e:
         raise Exception(f"Error getting preview: {str(e)}")
+
+
+async def test_db_connection(details: Dict[str, Any], query: str) -> Tuple[bool, str, Dict[str, Any]]:
+    """
+    Tests a database connection and executes a query to return a preview.
+    """
+    connection_string = None
+    conn = None
+    try:
+        db_type = details.get("db_type", "postgresql")
+        user = details["user"]
+        password = details["password"]
+        host = details["host"]
+        port = int(details["port"])
+        dbname = details["dbname"]
+
+        if db_type == "postgresql":
+            # Ensure asyncpg is installed
+            try:
+                import asyncpg
+            except ImportError:
+                raise ImportError("Required database driver is not installed. Please run 'pip install asyncpg'.")
+            
+            # Connect using asyncpg directly
+            conn = await asyncpg.connect(
+                user=user,
+                password=password,
+                database=dbname,
+                host=host,
+                port=port
+            )
+            
+            # Execute the query
+            preview_query = f"SELECT * FROM ({query.strip(';')}) AS sub_query LIMIT 10"
+            rows = await conn.fetch(preview_query)
+            
+            # Get column names
+            if rows:
+                columns = list(rows[0].keys())
+                data = [dict(row) for row in rows]
+            else:
+                columns = []
+                data = []
+            
+            preview_data = {
+                "columns": columns,
+                "data": data
+            }
+            
+            await conn.close()
+            return True, "Connection successful and query executed.", preview_data
+        else:
+            return False, f"Database type '{db_type}' is not supported.", {}
+
+    except ImportError as e:
+        return False, str(e), {}
+    except Exception as e:
+        error_msg = str(e)
+        # Check for common errors
+        if "authentication failed" in error_msg.lower() or "password" in error_msg.lower():
+            return False, f"Authentication failed: {error_msg}", {}
+        elif "does not exist" in error_msg.lower() or "unknown database" in error_msg.lower():
+            return False, f"Database not found: {error_msg}", {}
+        else:
+            return False, f"Database connection failed: {error_msg}", {}
+    finally:
+        if conn:
+            try:
+                await conn.close()
+            except:
+                pass

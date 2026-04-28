@@ -26,7 +26,6 @@ export interface LoginResponse {
   user?: User;
 }
 
-// Login hook
 export const useLogin = () => {
   const setUser = useAuthStore((state) => state.setUser);
   const setTokens = useAuthStore((state) => state.setTokens);
@@ -34,14 +33,34 @@ export const useLogin = () => {
 
   return useMutation({
     mutationFn: async (credentials: LoginRequest) => {
-      const response = await axios.post<LoginResponse>(
+      // 1. Login to get tokens
+      const loginResponse = await axios.post<LoginResponse>(
         `${API_BASE_URL}/auth/login`,
         credentials
       );
-      return response.data;
+      
+      const tokens = loginResponse.data;
+      
+      // 2. Fetch user profile using the new access token
+      const userResponse = await axios.get<User>(
+        `${API_BASE_URL}/auth/me`,
+        {
+          headers: {
+            Authorization: `Bearer ${tokens.access_token}`
+          }
+        }
+      );
+      
+      return {
+        ...tokens,
+        user: userResponse.data
+      };
     },
     onSuccess: (data) => {
       setTokens(data.access_token, data.refresh_token);
+      if (data.user) {
+        setUser(data.user);
+      }
       setError(null);
     },
     onError: (error: any) => {

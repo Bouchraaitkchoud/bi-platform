@@ -53,12 +53,15 @@ export class ChartService {
     return response.json();
   }
 
-  static async listCharts(skip = 0, limit = 10, dataset_id?: string): Promise<Chart[]> {
+  static async listCharts(skip = 0, limit = 100, dataset_id?: string, dashboard_id?: string): Promise<Chart[]> {
     const url = new URL(`${ChartService.API_URL}/charts`);
     url.searchParams.append('skip', skip.toString());
     url.searchParams.append('limit', limit.toString());
     if (dataset_id) {
       url.searchParams.append('dataset_id', dataset_id);
+    }
+    if (dashboard_id) {
+      url.searchParams.append('dashboard_id', dashboard_id);
     }
 
     const response = await fetch(url.toString(), {

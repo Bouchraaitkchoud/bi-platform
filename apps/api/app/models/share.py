@@ -15,6 +15,7 @@ class Share(BaseModel):
     can_view = Column(Boolean, default=True)  # Can view dashboard and charts
     can_comment = Column(Boolean, default=False)  # Can add comments and feedback
     can_edit = Column(Boolean, default=False)  # Can modify and edit dashboard
+    message = Column(String(500), nullable=True)  # Why the dashboard was shared
     expires_at = Column(DateTime(timezone=True), nullable=True)
     
     def __repr__(self):

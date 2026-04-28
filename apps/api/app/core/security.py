@@ -5,12 +5,16 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from app.core.config import settings
 
-# Password hashing
-# Support both bcrypt (new) and argon2id (legacy) for backward compatibility
-pwd_context = CryptContext(
-    schemes=["bcrypt", "argon2"], 
-    deprecated="argon2"
-)
+# Password hashing - use argon2 to avoid bcrypt's 72-byte limitation
+# Try to include bcrypt for legacy password support, but catch initialization errors
+try:
+    pwd_context = CryptContext(
+        schemes=["argon2", "bcrypt"],
+        deprecated="bcrypt"
+    )
+except Exception:
+    # If bcrypt fails to initialize, use only argon2
+    pwd_context = CryptContext(schemes=["argon2"])
 
 # Token expiry times (spec: 24h access, 7d refresh)
 ACCESS_TOKEN_EXPIRE_SECONDS = 24 * 60 * 60  # 24 hours
@@ -18,13 +22,27 @@ REFRESH_TOKEN_EXPIRE_SECONDS = 7 * 24 * 60 * 60  # 7 days
 
 
 def get_password_hash(password: str) -> str:
-    """Hash a password for storage"""
+    """Hash a password for storage using argon2"""
     return pwd_context.hash(password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against a hash"""
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        result = pwd_context.verify(plain_password, hashed_password)
+        return result
+    except ValueError as e:
+        # Handle bcrypt's 72-byte limit for legacy passwords
+        print(f"[DEBUG] ValueError during password verification: {e}")
+        try:
+            return pwd_context.verify(plain_password[:72], hashed_password)
+        except Exception as ex:
+            print(f"[DEBUG] Fallback verification also failed: {ex}")
+            return False
+    except Exception as e:
+        # Catch any other exceptions and log them
+        print(f"[DEBUG] Unexpected exception during password verification: {type(e).__name__}: {e}")
+        return False
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> Tuple[str, int]:

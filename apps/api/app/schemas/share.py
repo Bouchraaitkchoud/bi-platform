@@ -20,6 +20,7 @@ class ShareCreate(ShareBase):
     dashboard_id: UUID
     shared_with_user_id: Optional[UUID] = None
     shared_with_email: Optional[EmailStr] = None
+    message: Optional[str] = None  # Why are you sharing this?
 
 
 class ShareUpdate(BaseModel):
@@ -35,6 +36,7 @@ class ShareResponse(BaseModel):
     shared_with_user_id: Optional[UUID]
     shared_with_email: Optional[str]
     permissions: PermissionsModel
+    message: Optional[str] = None
     expires_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime
@@ -49,6 +51,7 @@ class SharedUserResponse(BaseModel):
     email: str
     permissions: PermissionsModel
     shared_at: str
+    message: Optional[str] = None
     
     @classmethod
     def from_share(cls, share_obj):
@@ -61,7 +64,8 @@ class SharedUserResponse(BaseModel):
                 can_comment=share_obj.can_comment,
                 can_edit=share_obj.can_edit
             ),
-            shared_at=share_obj.created_at.isoformat() if share_obj.created_at else ""
+            shared_at=share_obj.created_at.isoformat() if share_obj.created_at else "",
+            message=share_obj.message
         )
 
 
@@ -73,6 +77,7 @@ class SharedDashboardResponse(BaseModel):
     owner_email: str
     permissions: PermissionsModel
     shared_at: str
+    message: Optional[str] = None
     chart_count: int
     
     @classmethod
@@ -89,5 +94,6 @@ class SharedDashboardResponse(BaseModel):
                 can_edit=share_obj.can_edit
             ),
             shared_at=share_obj.created_at.isoformat() if share_obj.created_at else "",
+            message=share_obj.message,
             chart_count=len(dashboard_obj.chart_ids) if dashboard_obj.chart_ids else 0
         )

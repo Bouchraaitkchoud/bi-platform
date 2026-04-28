@@ -92,17 +92,28 @@ async def import_multiple_csv_files(
         db.add(warehouse)
         await db.flush()  # Flush warehouse to database so FK references work
         
-        # Create data tables
+        # Create data tables and save files to disk
+        from pathlib import Path
         created_tables = []
         warehouse_id = warehouse.id
         
+        # Create warehouse directory if it doesn't exist
+        warehouse_dir = Path("storage/warehouse") / str(warehouse_id)
+        warehouse_dir.mkdir(parents=True, exist_ok=True)
+        
         for table_meta in tables_metadata:
             table_id = uuid.uuid4()
+            table_name = table_meta["table_name"]
+            
+            # Save the CSV file to disk
+            file_path = warehouse_dir / f"{table_name}.csv"
+            tables_dict[table_name].to_csv(file_path, index=False)
+            
             data_table = DataTable(
                 id=table_id,
                 user_id=current_user_id,
-                name=table_meta["table_name"],
-                original_file=f"warehouse/{warehouse_id}/{table_meta['file_name']}",
+                name=table_name,
+                original_file=f"warehouse/{warehouse_id}/{table_name}.csv",
                 file_type="CSV",
                 row_count=table_meta["row_count"],
                 column_count=table_meta["column_count"],
@@ -332,14 +343,13 @@ async def get_warehouse_table_preview(
         warehouse_uuid = uuid.UUID(warehouse_id)
         current_user_id = uuid.UUID(current_user["user_id"])
         
-        # Get warehouse with its tables
-        stmt = select(DataWarehouse).where(
+        # Verify warehouse exists and belongs to user
+        warehouse_stmt = select(DataWarehouse).where(
             (DataWarehouse.id == warehouse_uuid) &
             (DataWarehouse.user_id == current_user_id)
-        ).options(selectinload(DataWarehouse.tables))
-        
-        result = await db.execute(stmt)
-        warehouse = result.scalar_one_or_none()
+        )
+        warehouse_result = await db.execute(warehouse_stmt)
+        warehouse = warehouse_result.scalar_one_or_none()
         
         if not warehouse:
             raise HTTPException(
@@ -347,12 +357,19 @@ async def get_warehouse_table_preview(
                 detail="Warehouse not found"
             )
         
-        # Find the table by name
-        data_table = None
-        for table in warehouse.tables:
-            if table.name == table_name:
-                data_table = table
-                break
+        # Query the table directly from warehouse_tables join
+        from sqlalchemy import join
+        data_table_stmt = select(DataTable).join(
+            warehouse_tables,
+            DataTable.id == warehouse_tables.c.table_id
+        ).where(
+            (warehouse_tables.c.warehouse_id == warehouse_uuid) &
+            (DataTable.name == table_name) &
+            (DataTable.user_id == current_user_id)
+        )
+        
+        data_table_result = await db.execute(data_table_stmt)
+        data_table = data_table_result.scalar_one_or_none()
         
         if not data_table:
             raise HTTPException(
@@ -373,13 +390,19 @@ async def get_warehouse_table_preview(
         if not file_path and Path(original_file).exists():
             file_path = original_file
         
-        # Strategy 3: Try in storage/datasets directory
+        # Strategy 3: Try in storage directory (for warehouse paths like warehouse/...)
+        if not file_path:
+            storage_path = Path("storage") / original_file
+            if storage_path.exists():
+                file_path = str(storage_path)
+        
+        # Strategy 4: Try in storage/datasets directory
         if not file_path:
             storage_path = Path("storage/datasets") / original_file
             if storage_path.exists():
                 file_path = str(storage_path)
         
-        # Strategy 4: Try just the filename in storage/datasets
+        # Strategy 5: Try just the filename in storage/datasets
         if not file_path:
             filename = Path(original_file).name
             storage_path = Path("storage/datasets") / filename
@@ -388,8 +411,8 @@ async def get_warehouse_table_preview(
         
         if not file_path:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Data file not found: {original_file}"
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Data file not found at: {original_file}. Tried: {original_file}, storage/{original_file}, storage/datasets/{original_file}"
             )
         
         # Load data from file

@@ -10,16 +10,15 @@ from pathlib import Path
 
 from app.core.database import get_db
 from app.core.security import verify_token
-from app.core.dependencies import get_current_user
-from app.schemas.dataset import DatasetCreate, DatasetResponse, DatasetUpdate, DatasetPreview
+from app.schemas.dataset import DatasetCreate, DatasetResponse, DatasetUpdate, DatasetPreview, DatabaseConnectionTest, DatabaseConnectionTestResponse
 from app.schemas.data_cleaning import DataQualityAnalysis, ColumnStatistics, CleaningPlan
-from app.models.dataset import Dataset
+from app.models.dataset import Dataset, SourceType
 from app.models.user import User
-from app.models.transformation import Transformation, TransformationOperation
-from app.services.dataset_service import extract_dataset_metadata, get_dataset_preview
+from app.services.dataset_service import extract_dataset_metadata, get_dataset_preview, test_db_connection
 from app.services.data_cleaning_service import analyze_data_quality, get_column_statistics
 from app.services.data_operations_service import DataOperationsService, apply_cleaning_operations
 from app.schemas.transformation import TransformationCreate, TransformationResponse, TransformationPipeline
+
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 security = HTTPBearer()
@@ -60,23 +59,52 @@ async def create_dataset(
     current_user: dict = Depends(get_current_user_from_token),
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new dataset"""
+    """Create a new dataset from a file or database connection."""
     
-    db_dataset = Dataset(
-        id=uuid.uuid4(),
-        user_id=uuid.UUID(current_user["user_id"]),
-        name=dataset_data.name,
-        description=dataset_data.description,
-        original_file=f"dataset_{uuid.uuid4()}.{dataset_data.file_type}",
-        file_type=dataset_data.file_type,
-        columns_metadata={}
-    )
-    
+    if dataset_data.source_type == SourceType.DATABASE:
+        # Logic for database-sourced dataset
+        db_dataset = Dataset(
+            id=uuid.uuid4(),
+            user_id=uuid.UUID(current_user["user_id"]),
+            name=dataset_data.name,
+            description=dataset_data.description,
+            source_type=SourceType.DATABASE,
+            db_connection_details=dataset_data.db_connection_details,
+            sql_query=dataset_data.sql_query,
+            columns_metadata={}
+        )
+    else:
+        # This part might need adjustment if you still want to create file datasets
+        # through this endpoint without an immediate upload.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="For file-based datasets, please use the /upload/file endpoint."
+        )
+
     db.add(db_dataset)
     await db.commit()
     await db.refresh(db_dataset)
     
+    # Here you would typically trigger a background task to fetch data,
+    # analyze it, and update the dataset's status and metadata.
+    
     return db_dataset
+
+
+@router.post("/test-db-connection", response_model=DatabaseConnectionTestResponse, status_code=status.HTTP_200_OK)
+async def test_database_connection(
+    connection_data: DatabaseConnectionTest
+):
+    """Test a database connection and query."""
+    try:
+        success, message, data = await test_db_connection(connection_data.db_connection_details, connection_data.sql_query)
+        if not success:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+        return {"message": message, "preview_data": data}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 @router.post("/upload/file", response_model=DatasetResponse, status_code=status.HTTP_201_CREATED)
@@ -454,7 +482,7 @@ async def delete_dataset(
 async def upload_dataset_file(
     dataset_id: uuid.UUID,
     file: UploadFile = File(...),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user_from_token),
     db: AsyncSession = Depends(get_db)
 ):
     """Upload a file to dataset"""

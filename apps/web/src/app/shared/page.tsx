@@ -2,20 +2,9 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Share2, Loader2, Eye } from 'lucide-react';
+import { Share2, Loader2, Eye, Edit3, MessageSquare, Clock, User } from 'lucide-react';
 import { AuthService } from '@/lib/auth';
-import { ShareService } from '@/lib/services/ShareService';
-
-interface SharedDashboard {
-  id: string;
-  dashboard_id: string;
-  dashboard_name: string;
-  owner_email: string;
-  can_view: boolean;
-  can_edit: boolean;
-  can_comment: boolean;
-  created_at: string;
-}
+import { ShareService, SharedDashboard } from '@/lib/services/ShareService';
 
 export default function SharedPage() {
   const router = useRouter();
@@ -38,7 +27,7 @@ export default function SharedPage() {
     setLoading(true);
     try {
       const data = await ShareService.listSharedDashboards();
-      setShared((data || []) as any);
+      setShared(data || []);
       setError('');
     } catch (err) {
       setError('Failed to load shared dashboards');
@@ -59,8 +48,8 @@ export default function SharedPage() {
 
   const getFilteredData = () => {
     return shared.filter((item) => {
-      if (filter === 'view') return item.can_view && !item.can_edit;
-      if (filter === 'edit') return item.can_edit;
+      if (filter === 'view') return item.permissions.can_view && !item.permissions.can_edit;
+      if (filter === 'edit') return item.permissions.can_edit;
       return true;
     });
   };
@@ -146,114 +135,94 @@ export default function SharedPage() {
           </div>
         )}
 
-        {/* Table */}
+        {/* Cards */}
         {!loading && filtered.length > 0 && (
-          <div style={{ backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ backgroundColor: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
-                  <th style={{ padding: '16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#374151', textTransform: 'uppercase' }}>
-                    Dashboard Name
-                  </th>
-                  <th style={{ padding: '16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#374151', textTransform: 'uppercase' }}>
-                    Owner
-                  </th>
-                  <th style={{ padding: '16px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: '#374151', textTransform: 'uppercase' }}>
-                    Permissions
-                  </th>
-                  <th style={{ padding: '16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#374151', textTransform: 'uppercase' }}>
-                    Shared Date
-                  </th>
-                  <th style={{ padding: '16px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: '#374151', textTransform: 'uppercase' }}>
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((item, idx) => (
-                  <tr key={item.id} style={{ borderBottom: idx < filtered.length - 1 ? '1px solid #e5e7eb' : 'none' }}>
-                    <td style={{ padding: '16px', fontSize: '14px', color: '#2d8659', fontWeight: '600' }}>
-                      {item.dashboard_name}
-                    </td>
-                    <td style={{ padding: '16px', fontSize: '14px', color: '#6b7280' }}>{item.owner_email}</td>
-                    <td style={{ padding: '16px', textAlign: 'center' }}>
-                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                        {item.can_view && (
-                          <span
-                            style={{
-                              display: 'inline-block',
-                              padding: '4px 12px',
-                              backgroundColor: '#dbeafe',
-                              color: '#0284c7',
-                              borderRadius: '12px',
-                              fontSize: '12px',
-                              fontWeight: '600',
-                            }}
-                          >
-                            View
-                          </span>
-                        )}
-                        {item.can_edit && (
-                          <span
-                            style={{
-                              display: 'inline-block',
-                              padding: '4px 12px',
-                              backgroundColor: '#dcfce7',
-                              color: '#16a34a',
-                              borderRadius: '12px',
-                              fontSize: '12px',
-                              fontWeight: '600',
-                            }}
-                          >
-                            Edit
-                          </span>
-                        )}
-                        {item.can_comment && (
-                          <span
-                            style={{
-                              display: 'inline-block',
-                              padding: '4px 12px',
-                              backgroundColor: '#fef3c7',
-                              color: '#b45309',
-                              borderRadius: '12px',
-                              fontSize: '12px',
-                              fontWeight: '600',
-                            }}
-                          >
-                            Comment
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td style={{ padding: '16px', fontSize: '14px', color: '#6b7280' }}>
-                      {formatDate(item.created_at)}
-                    </td>
-                    <td style={{ padding: '16px', textAlign: 'center' }}>
-                      <button
-                        onClick={() => router.push(`/dashboards/${item.dashboard_id}`)}
-                        title="View Dashboard"
-                        style={{
-                          backgroundColor: 'transparent',
-                          border: 'none',
-                          color: '#2d8659',
-                          cursor: 'pointer',
-                          padding: '6px 12px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          fontSize: '14px',
-                          fontWeight: '600',
-                          margin: '0 auto',
-                        }}
-                      >
-                        <Eye size={16} />
-                        Open
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', gap: '16px' }}>
+            {filtered.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  backgroundColor: 'white',
+                  borderRadius: '12px',
+                  border: '1px solid #e5e7eb',
+                  padding: '24px',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                  transition: 'box-shadow 0.2s',
+                  cursor: 'pointer',
+                }}
+                onClick={() => router.push(`/dashboards/${item.id}`)}
+                onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)')}
+                onMouseLeave={e => (e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.06)')}
+              >
+                {/* Title */}
+                <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1f2937', margin: '0 0 8px 0' }}>
+                  {item.name}
+                </h3>
+                {item.description && (
+                  <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 16px 0', lineHeight: '1.4' }}>
+                    {item.description}
+                  </p>
+                )}
+
+                {/* Shared by & date */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <User size={14} style={{ color: '#9ca3af' }} />
+                    <span style={{ fontSize: '13px', color: '#6b7280' }}>Shared by <strong style={{ color: '#374151' }}>{item.owner_email}</strong></span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Clock size={14} style={{ color: '#9ca3af' }} />
+                    <span style={{ fontSize: '13px', color: '#6b7280' }}>{formatDate(item.shared_at)}</span>
+                  </div>
+                </div>
+
+                {/* Message */}
+                {item.message && (
+                  <div style={{
+                    backgroundColor: '#f0f9ff',
+                    border: '1px solid #bae6fd',
+                    borderRadius: '8px',
+                    padding: '10px 14px',
+                    marginBottom: '12px',
+                  }}>
+                    <p style={{ fontSize: '13px', color: '#0369a1', margin: 0, fontStyle: 'italic' }}>
+                      "{item.message}"
+                    </p>
+                  </div>
+                )}
+
+                {/* Permissions badges */}
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {item.permissions.can_view && (
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '4px',
+                      padding: '4px 12px', backgroundColor: '#dbeafe', color: '#0284c7',
+                      borderRadius: '12px', fontSize: '12px', fontWeight: '600',
+                    }}>
+                      <Eye size={12} /> View
+                    </span>
+                  )}
+                  {item.permissions.can_comment && (
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '4px',
+                      padding: '4px 12px', backgroundColor: '#fef3c7', color: '#b45309',
+                      borderRadius: '12px', fontSize: '12px', fontWeight: '600',
+                    }}>
+                      <MessageSquare size={12} /> Comment
+                    </span>
+                  )}
+                  {item.permissions.can_edit && (
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '4px',
+                      padding: '4px 12px', backgroundColor: '#dcfce7', color: '#16a34a',
+                      borderRadius: '12px', fontSize: '12px', fontWeight: '600',
+                    }}>
+                      <Edit3 size={12} /> Edit
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
