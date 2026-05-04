@@ -7,6 +7,7 @@ import uuid
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.exc import SQLAlchemyError
 from typing import Dict, Any, Tuple, List
+from app.core.security import decrypt_value, is_encrypted_value
 
 
 def _extract_metadata_sync(file_path: str, file_type_lower: str) -> Dict[str, Any]:
@@ -95,7 +96,14 @@ async def test_db_connection(details: Dict[str, Any], query: str) -> Tuple[bool,
     try:
         db_type = details.get("db_type", "postgresql")
         user = details["user"]
-        password = details["password"]
+        password = details.get("password")
+        if not password and details.get("password_enc"):
+            password = details.get("password_enc")
+
+        if password and is_encrypted_value(password):
+            password = decrypt_value(password)
+        if not password:
+            raise ValueError("Database password is required")
         host = details["host"]
         port = int(details["port"])
         dbname = details["dbname"]

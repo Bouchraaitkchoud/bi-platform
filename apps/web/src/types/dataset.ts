@@ -24,8 +24,38 @@ export interface DatasetCreate {
   name: string;
   description?: string;
   source_type: 'DATABASE';
-  db_connection_details: Record<string, any>;
+  db_connection_details?: Record<string, any>;
   sql_query: string;
+}
+
+export interface ActiveDatabaseConnectionSet {
+  db_connection_details: {
+    db_type: string;
+    host: string;
+    port: number;
+    user: string;
+    password: string;
+    dbname: string;
+  };
+}
+
+export interface ActiveDatabaseConnectionResponse {
+  db_connection_details: {
+    db_type: string;
+    host: string;
+    port: number;
+    user: string;
+    dbname: string;
+    password?: string;
+  };
+}
+
+export interface DatabaseQueryRequest {
+  sql_query: string;
+}
+
+export interface DatabaseQueryHistoryResponse {
+  items: string[];
 }
 
 export interface DatabaseConnectionTest {

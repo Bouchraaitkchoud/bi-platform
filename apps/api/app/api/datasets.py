@@ -9,8 +9,19 @@ import shutil
 from pathlib import Path
 
 from app.core.database import get_db
-from app.core.security import verify_token
-from app.schemas.dataset import DatasetCreate, DatasetResponse, DatasetUpdate, DatasetPreview, DatabaseConnectionTest, DatabaseConnectionTestResponse
+from app.core.security import verify_token, encrypt_value
+from app.schemas.dataset import (
+    DatasetCreate,
+    DatasetResponse,
+    DatasetUpdate,
+    DatasetPreview,
+    DatabaseConnectionTest,
+    DatabaseConnectionTestResponse,
+    ActiveDatabaseConnectionSet,
+    ActiveDatabaseConnectionResponse,
+    DatabaseQueryRequest,
+    DatabaseQueryHistoryResponse,
+)
 from app.schemas.data_cleaning import DataQualityAnalysis, ColumnStatistics, CleaningPlan
 from app.models.dataset import Dataset, SourceType
 from app.models.user import User
@@ -62,6 +73,32 @@ async def create_dataset(
     """Create a new dataset from a file or database connection."""
     
     if dataset_data.source_type == SourceType.DATABASE:
+        user = None
+        db_connection_details = dataset_data.db_connection_details
+        if not db_connection_details:
+            user_stmt = select(User).where(User.id == uuid.UUID(current_user["user_id"]))
+            user_result = await db.execute(user_stmt)
+            user = user_result.scalar_one_or_none()
+            if not user or not user.active_db_connection:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No active database connection found for this user"
+                )
+            db_connection_details = user.active_db_connection
+        else:
+            db_connection_details = _normalize_connection_details(db_connection_details)
+
+        if not dataset_data.sql_query:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="sql_query is required for DATABASE source_type"
+            )
+
+        if user is None:
+            user_stmt = select(User).where(User.id == uuid.UUID(current_user["user_id"]))
+            user_result = await db.execute(user_stmt)
+            user = user_result.scalar_one_or_none()
+
         # Logic for database-sourced dataset
         db_dataset = Dataset(
             id=uuid.uuid4(),
@@ -69,10 +106,12 @@ async def create_dataset(
             name=dataset_data.name,
             description=dataset_data.description,
             source_type=SourceType.DATABASE,
-            db_connection_details=dataset_data.db_connection_details,
+            db_connection_details=db_connection_details,
             sql_query=dataset_data.sql_query,
             columns_metadata={}
         )
+        if user:
+            await _append_query_history(user, dataset_data.sql_query, db, commit=False)
     else:
         # This part might need adjustment if you still want to create file datasets
         # through this endpoint without an immediate upload.
@@ -89,6 +128,136 @@ async def create_dataset(
     # analyze it, and update the dataset's status and metadata.
     
     return db_dataset
+
+
+def _mask_connection_details(details: dict) -> dict:
+    masked = dict(details)
+    if "password" in masked:
+        masked["password"] = "********"
+    if "password_enc" in masked:
+        masked["password_enc"] = "********"
+    return masked
+
+
+def _normalize_connection_details(details: dict) -> dict:
+    normalized = dict(details)
+    if "password" in normalized and normalized["password"]:
+        normalized["password_enc"] = encrypt_value(str(normalized["password"]))
+        normalized.pop("password", None)
+    return normalized
+
+
+async def _append_query_history(user: User, sql_query: str, db: AsyncSession, max_entries: int = 10, commit: bool = True) -> None:
+    if not sql_query:
+        return
+    history = list(user.active_db_query_history or [])
+    history = [item for item in history if item != sql_query]
+    history.insert(0, sql_query)
+    user.active_db_query_history = history[:max_entries]
+    if commit:
+        await db.commit()
+
+
+@router.get("/db-connection", response_model=ActiveDatabaseConnectionResponse)
+async def get_active_db_connection(
+    current_user: dict = Depends(get_current_user_from_token),
+    db: AsyncSession = Depends(get_db)
+):
+    user_stmt = select(User).where(User.id == uuid.UUID(current_user["user_id"]))
+    user_result = await db.execute(user_stmt)
+    user = user_result.scalar_one_or_none()
+
+    if not user or not user.active_db_connection:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active database connection")
+
+    return {"db_connection_details": _mask_connection_details(user.active_db_connection)}
+
+
+@router.post("/db-connection", response_model=ActiveDatabaseConnectionResponse)
+async def set_active_db_connection(
+    connection_data: ActiveDatabaseConnectionSet,
+    current_user: dict = Depends(get_current_user_from_token),
+    db: AsyncSession = Depends(get_db)
+):
+    user_stmt = select(User).where(User.id == uuid.UUID(current_user["user_id"]))
+    user_result = await db.execute(user_stmt)
+    user = user_result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    user.active_db_connection = _normalize_connection_details(connection_data.db_connection_details.model_dump())
+    await db.commit()
+    await db.refresh(user)
+
+    return {"db_connection_details": _mask_connection_details(user.active_db_connection)}
+
+
+@router.delete("/db-connection", status_code=status.HTTP_204_NO_CONTENT)
+async def clear_active_db_connection(
+    current_user: dict = Depends(get_current_user_from_token),
+    db: AsyncSession = Depends(get_db)
+):
+    user_stmt = select(User).where(User.id == uuid.UUID(current_user["user_id"]))
+    user_result = await db.execute(user_stmt)
+    user = user_result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    user.active_db_connection = None
+    await db.commit()
+
+
+@router.get("/db-connection/query-history", response_model=DatabaseQueryHistoryResponse)
+async def get_active_db_query_history(
+    current_user: dict = Depends(get_current_user_from_token),
+    db: AsyncSession = Depends(get_db)
+):
+    user_stmt = select(User).where(User.id == uuid.UUID(current_user["user_id"]))
+    user_result = await db.execute(user_stmt)
+    user = user_result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    return {"items": list(user.active_db_query_history or [])}
+
+
+@router.delete("/db-connection/query-history", status_code=status.HTTP_204_NO_CONTENT)
+async def clear_active_db_query_history(
+    current_user: dict = Depends(get_current_user_from_token),
+    db: AsyncSession = Depends(get_db)
+):
+    user_stmt = select(User).where(User.id == uuid.UUID(current_user["user_id"]))
+    user_result = await db.execute(user_stmt)
+    user = user_result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    user.active_db_query_history = []
+    await db.commit()
+
+
+@router.post("/db-connection/test-query", response_model=DatabaseConnectionTestResponse)
+async def test_active_db_connection_query(
+    query_data: DatabaseQueryRequest,
+    current_user: dict = Depends(get_current_user_from_token),
+    db: AsyncSession = Depends(get_db)
+):
+    user_stmt = select(User).where(User.id == uuid.UUID(current_user["user_id"]))
+    user_result = await db.execute(user_stmt)
+    user = user_result.scalar_one_or_none()
+
+    if not user or not user.active_db_connection:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active database connection")
+
+    success, message, data = await test_db_connection(user.active_db_connection, query_data.sql_query)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+    await _append_query_history(user, query_data.sql_query, db)
+    return {"message": message, "preview_data": data}
 
 
 @router.post("/test-db-connection", response_model=DatabaseConnectionTestResponse, status_code=status.HTTP_200_OK)
@@ -242,6 +411,32 @@ async def get_dataset_preview_endpoint(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Dataset not found"
         )
+
+    if dataset.source_type == SourceType.DATABASE:
+        if not dataset.db_connection_details or not dataset.sql_query:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Database connection details or SQL query missing for this dataset"
+            )
+
+        success, message, data = await test_db_connection(
+            dataset.db_connection_details,
+            dataset.sql_query
+        )
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=message
+            )
+
+        columns = data.get("columns", [])
+        rows = data.get("data", [])
+        return {
+            "columns": columns,
+            "data": rows,
+            "row_count": len(rows),
+            "column_count": len(columns)
+        }
     
     # Use the stored file path from the dataset record
     # Try multiple path variations to find the file

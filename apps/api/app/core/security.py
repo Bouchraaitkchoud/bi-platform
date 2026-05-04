@@ -4,6 +4,7 @@ from typing import Optional, Tuple
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from app.core.config import settings
+from cryptography.fernet import Fernet, InvalidToken
 
 # Password hashing - use argon2 to avoid bcrypt's 72-byte limitation
 # Try to include bcrypt for legacy password support, but catch initialization errors
@@ -97,3 +98,28 @@ def verify_token(token: str, token_type: str = "access") -> Optional[dict]:
         return payload
     except JWTError:
         return None
+
+
+def _get_fernet() -> Fernet:
+    return Fernet(settings.ENCRYPTION_KEY)
+
+
+def encrypt_value(value: str) -> str:
+    if value is None:
+        return ""
+    token = _get_fernet().encrypt(value.encode("utf-8")).decode("utf-8")
+    return f"enc:{token}"
+
+
+def decrypt_value(value: str) -> str:
+    if not value:
+        return ""
+    if value.startswith("enc:"):
+        token = value[4:]
+    else:
+        token = value
+    return _get_fernet().decrypt(token.encode("utf-8")).decode("utf-8")
+
+
+def is_encrypted_value(value: str) -> bool:
+    return isinstance(value, str) and value.startswith("enc:")

@@ -13,7 +13,7 @@ const NewDatasetPage = () => {
   const [activeTab, setActiveTab] = useState('file');
 
   const handleSuccess = (dataset: any) => {
-    router.push(`/datasets/${dataset.id}`);
+    router.push(`/datasets/${dataset.id}/explore`);
   };
 
   const tabs: TabConfig[] = [

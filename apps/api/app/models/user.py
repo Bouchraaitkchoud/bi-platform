@@ -1,5 +1,5 @@
 # apps/api/app/models/user.py
-from sqlalchemy import Column, String, Boolean, DateTime
+from sqlalchemy import Column, String, Boolean, DateTime, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from app.models.base import BaseModel
 from datetime import datetime
@@ -15,6 +15,8 @@ class User(BaseModel):
     is_active = Column(Boolean, default=True)
     last_login = Column(DateTime(timezone=True), nullable=True)
     last_activity = Column(DateTime(timezone=True), nullable=True)  # For session expiry tracking (30 min inactivity)
+    active_db_connection = Column(JSON, nullable=True)
+    active_db_query_history = Column(JSON, nullable=True)
     
     def __repr__(self):
         return f"<User {self.email}>"

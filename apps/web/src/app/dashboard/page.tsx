@@ -119,7 +119,7 @@ export default function DashboardPage() {
                       <div className="text-sm text-gray-500 mt-1">
                         {dataset.row_count.toLocaleString()} rows ·{' '}
                         {dataset.column_count} columns ·{' '}
-                        {dataset.file_type.toUpperCase()} ·{' '}
+                        {(dataset.file_type ?? dataset.source_type ?? 'DATABASE').toString().toUpperCase()} ·{' '}
                         {new Date(dataset.created_at).toLocaleDateString()}
                       </div>
                     </div>

@@ -29,8 +29,9 @@ class DatasetCreate(DatasetBase):
 
     @field_validator('db_connection_details', 'sql_query')
     def check_db_source(cls, v, info):
-        if info.data.get('source_type') == SourceType.DATABASE and not v:
-            raise ValueError(f'{info.field_name} is required for DATABASE source_type')
+        if info.data.get('source_type') == SourceType.DATABASE:
+            if info.field_name == 'sql_query' and not v:
+                raise ValueError('sql_query is required for DATABASE source_type')
         return v
 
 
@@ -76,6 +77,31 @@ class DatabaseConnectionTest(BaseModel):
     """Test database connection request"""
     db_connection_details: Dict[str, Any]
     sql_query: str
+
+
+class DatabaseConnectionDetails(BaseModel):
+    db_type: str
+    host: str
+    port: int
+    user: str
+    password: str
+    dbname: str
+
+
+class ActiveDatabaseConnectionSet(BaseModel):
+    db_connection_details: DatabaseConnectionDetails
+
+
+class ActiveDatabaseConnectionResponse(BaseModel):
+    db_connection_details: Dict[str, Any]
+
+
+class DatabaseQueryRequest(BaseModel):
+    sql_query: str
+
+
+class DatabaseQueryHistoryResponse(BaseModel):
+    items: list[str]
 
 
 class DatabaseConnectionTestResponse(BaseModel):
